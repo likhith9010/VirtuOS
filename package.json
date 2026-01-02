@@ -1,0 +1,55 @@
+{
+  "name": "virtuos-desktop",
+  "version": "1.0.0",
+  "description": "VirtuOS - Computer Use Agent Desktop Application",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\" \"npm run dev:electron\"",
+    "dev:backend": "cd BACKEND && npm run dev",
+    "dev:frontend": "cd FRONTEND && npm run dev",
+    "dev:electron": "wait-on http://localhost:5173 && electron .",
+    "build": "npm run build:frontend && npm run build:backend && electron-builder",
+    "build:frontend": "cd FRONTEND && npm run build",
+    "build:backend": "cd BACKEND && npm install --production",
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "keywords": ["virtuos", "ai", "desktop", "electron", "computer-control"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.virtuos.desktop",
+    "productName": "VirtuOS",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "FRONTEND/dist/**/*",
+      "BACKEND/**/*",
+      "!BACKEND/node_modules",
+      "BACKEND/node_modules/**/*"
+    ],
+    "win": {
+      "target": ["nsis", "portable"],
+      "icon": "FRONTEND/src/assets/image.png"
+    },
+    "mac": {
+      "target": ["dmg", "zip"],
+      "icon": "FRONTEND/src/assets/image.png",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "FRONTEND/src/assets/image.png",
+      "category": "Utility"
+    }
+  }
+}

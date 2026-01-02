@@ -1,0 +1,31 @@
+# Electron build outputs
+dist/
+dist-electron/
+*.exe
+*.dmg
+*.AppImage
+*.deb
+
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build folders
+FRONTEND/dist/
+BACKEND/node_modules/
+FRONTEND/node_modules/

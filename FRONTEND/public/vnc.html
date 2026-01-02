@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>VNC Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #1a1a2e;
+        }
+        #screen {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #status {
+            color: white;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            padding: 20px;
+            text-align: center;
+        }
+        #password-form {
+            background: #2d2d30;
+            padding: 24px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        #password-form p {
+            margin: 0 0 16px 0;
+            font-size: 14px;
+            color: #e0e0e0;
+        }
+        #password-form input {
+            padding: 12px 16px;
+            margin: 8px 0;
+            border: 1px solid #3e3e42;
+            border-radius: 8px;
+            background: #1e1e1e;
+            color: white;
+            font-size: 14px;
+            width: 200px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        #password-form input:focus {
+            border-color: #f97316;
+        }
+        #password-form button {
+            padding: 12px 24px;
+            background: #f97316;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        #password-form button:hover {
+            background: #ea580c;
+        }
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(249, 115, 22, 0.3);
+            border-top-color: #f97316;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .error-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 16px;
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div id="screen">
+        <div id="status">
+            <div class="loading-spinner"></div>
+            <p>Connecting to VNC server...</p>
+        </div>
+    </div>
+    
+    <script type="module">
+        import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/core/rfb.js';
+        
+        const screenEl = document.getElementById('screen');
+        const statusEl = document.getElementById('status');
+        let rfb = null;
+        
+        function showPasswordPrompt() {
+            statusEl.innerHTML = `
+                <div id="password-form">
+                    <p>🔑 VNC Password Required</p>
+                    <input type="password" id="vnc-password" placeholder="Enter VNC password" autofocus>
+                    <br>
+                    <button onclick="window.submitPassword()">Connect</button>
+                </div>
+            `;
+            document.getElementById('vnc-password').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') window.submitPassword();
+            });
+        }
+        
+        function showError(message, detail = '') {
+            statusEl.innerHTML = `
+                <svg class="error-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p style="color: #ef4444; font-weight: 500;">${message}</p>
+                ${detail ? `<p style="font-size: 12px; color: #9ca3af; margin-top: 8px;">${detail}</p>` : ''}
+                <button onclick="location.reload()" style="margin-top: 16px; padding: 8px 16px; background: #374151; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                    Retry Connection
+                </button>
+            `;
+        }
+        
+        window.submitPassword = function() {
+            const password = document.getElementById('vnc-password').value;
+            if (password && rfb) {
+                rfb.sendCredentials({ password: password });
+                statusEl.innerHTML = `
+                    <div class="loading-spinner"></div>
+                    <p>Authenticating...</p>
+                `;
+            }
+        };
+        
+        function connect() {
+            try {
+                const url = 'ws://127.0.0.1:6080';
+                console.log('Connecting to:', url);
+                
+                rfb = new RFB(screenEl, url, {
+                    wsProtocols: ['binary']
+                });
+                
+                rfb.scaleViewport = true;
+                rfb.resizeSession = false;
+                rfb.clipViewport = false;
+                rfb.qualityLevel = 6;
+                rfb.compressionLevel = 2;
+                
+                rfb.addEventListener('connect', () => {
+                    console.log('✅ Connected to VNC server');
+                    statusEl.style.display = 'none';
+                    // Notify parent window
+                    window.parent.postMessage({ type: 'vnc-connected' }, '*');
+                });
+                
+                rfb.addEventListener('disconnect', (e) => {
+                    console.log('❌ Disconnected:', e.detail);
+                    statusEl.style.display = 'block';
+                    showError('Disconnected from VNC', e.detail.reason || 'Connection closed');
+                    window.parent.postMessage({ type: 'vnc-disconnected' }, '*');
+                });
+                
+                rfb.addEventListener('securityfailure', (e) => {
+                    console.error('🔒 Security failure:', e.detail);
+                    statusEl.style.display = 'block';
+                    statusEl.innerHTML = '<p style="color: #f48771;">❌ Wrong password</p>';
+                    setTimeout(showPasswordPrompt, 1500);
+                });
+                
+                rfb.addEventListener('credentialsrequired', (e) => {
+                    console.log('🔑 Credentials required');
+                    statusEl.style.display = 'block';
+                    showPasswordPrompt();
+                });
+                
+            } catch (error) {
+                console.error('❌ Failed:', error);
+                showError('Failed to connect', error.message);
+            }
+        }
+        
+        // Start connection after a short delay
+        setTimeout(connect, 100);
+    </script>
+</body>
+</html>
