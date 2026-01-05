@@ -2,9 +2,9 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-// Using Google Gemini 2.0 Flash API (supports vision)
+// Using Google Gemini 2.5 Flash API (supports vision)
 const API_KEY = process.env.GEMINI_API_KEY || 'your-api-key-here';
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${API_KEY}`;
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
 
 /**
  * Detect if message is a task (action command) vs question
