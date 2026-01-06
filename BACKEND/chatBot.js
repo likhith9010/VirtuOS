@@ -2,9 +2,11 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-// Using Google Gemini 2.5 Flash API (supports vision)
+// Using Google Gemini API (supports vision)
+// gemini-2.5-flash works but has 5 RPM limit on free tier - wait between iterations
 const API_KEY = process.env.GEMINI_API_KEY || 'your-api-key-here';
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
 
 /**
  * Detect if message is a task (action command) vs question
@@ -17,6 +19,167 @@ function isTask(message) {
 
 // Export isTask for use in server.js
 module.exports.isTask = isTask;
+
+/**
+ * COMPUTER USE: Get next action(s) from AI based on screen state
+ * Returns structured JSON actions that can be executed on the VM
+ */
+async function getComputerUseAction(task, screenshotBase64, context = {}) {
+  const { 
+    previousActions = [], 
+    actionHistory = [],
+    attempt = 1, 
+    maxAttempts = 10,
+    screenUnchanged = false,
+    sameScreenCount = 0
+  } = context;
+  
+  // Build action history string with success/failure info
+  let historyStr = 'None';
+  if (actionHistory.length > 0) {
+    historyStr = actionHistory.map(h => 
+      `Step ${h.step}: ${h.action} [${h.success ? '✓' : '✗'}]${h.screenChanged ? ' (screen changed)' : ''}`
+    ).join('\n');
+  }
+  
+  // Add warning if screen hasn't changed
+  let screenWarning = '';
+  if (screenUnchanged && sameScreenCount > 0) {
+    screenWarning = `
+⚠️ WARNING: The screen has NOT changed after ${sameScreenCount} action(s). This means:
+- The previous click/action may have missed the target
+- You should try a DIFFERENT coordinate or approach
+- DO NOT repeat the exact same action - it won't work!
+- Consider: Is the element clickable? Is there a loading state? Try a different location.`;
+  }
+
+  const systemPrompt = `You are a Computer Use AI agent controlling a Linux desktop (Arch Linux with KDE). Analyze the screenshot and decide the NEXT ACTION.
+
+SCREEN: 1920x1080 pixels
+GRID SYSTEM: Screen is divided into 12x8 grid (columns A-L, rows 1-8). Each cell is ~160x135 pixels.
+- Column A: x=0-160, B: x=160-320, C: x=320-480... L: x=1760-1920
+- Row 1: y=0-135, Row 2: y=135-270, Row 3: y=270-405... Row 8: y=945-1080
+- Desktop icons are typically in column A (left side), rows 1-4
+
+RESPOND WITH ONLY THIS JSON FORMAT (nothing else):
+{"thinking": "what I see and my plan", "action": {"type": "click", "x": 100, "y": 200}}
+
+ACTION TYPES:
+- click: {"type": "click", "x": <int>, "y": <int>}
+- double_click: {"type": "double_click", "x": <int>, "y": <int>}
+- type: {"type": "type", "text": "text to type"}
+- key: {"type": "key", "key": "enter"} (enter, escape, tab, backspace, ctrl+c, ctrl+v, ctrl+t, alt+f4, super)
+- scroll: {"type": "scroll", "x": <int>, "y": <int>, "direction": "down", "amount": 3}
+- wait: {"type": "wait", "duration": 2000}
+- done: {"type": "done", "message": "Task completed because..."}
+- error: {"type": "error", "message": "Cannot complete because..."}
+
+COORDINATE TIPS:
+- Desktop icons: Usually around x=80-100, first icon y≈100, spacing ~64px between icons
+- Taskbar (bottom): y≈1050, apps spread across bottom
+- Window title bars: Around y=30-50 from window top
+- Close button (X): Top-right of windows
+
+IMPORTANT RULES:
+1. ONE action per response
+2. Click CENTER of UI elements - be precise with coordinates
+3. After typing in a field, use key:enter to submit
+4. Desktop icons: Use SINGLE CLICK (not double-click) on modern desktops
+5. Taskbar/panel apps need single click
+6. If you see the app is already open (window visible), use "done"
+7. NEVER repeat the same action with same coordinates if it didn't work
+8. Look carefully at what changed on screen since last action
+${screenWarning}
+
+PREVIOUS ACTIONS:
+${historyStr}
+
+ATTEMPT: ${attempt}/${maxAttempts}
+TASK: ${task}
+
+Analyze the current screenshot and provide the next action. If the task appears complete (e.g., app window is open), use "done".
+OUTPUT ONLY VALID JSON:`;
+
+  try {
+    const response = await axios.post(
+      API_URL,
+      {
+        contents: [{
+          parts: [
+            { text: systemPrompt },
+            {
+              inline_data: {
+                mime_type: "image/png",
+                data: screenshotBase64
+              }
+            }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.2,  // Even lower for consistent JSON
+          maxOutputTokens: 300,
+          topP: 0.8,
+          responseMimeType: "application/json"  // Force JSON output
+        }
+      },
+      {
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+
+    const aiResponse = response.data.candidates[0].content.parts[0].text;
+    console.log('🤖 AI Response:', aiResponse);
+
+    // Parse JSON from response
+    let jsonStr = aiResponse.trim();
+    
+    // Remove markdown code blocks if present
+    if (jsonStr.includes('```')) {
+      const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (match) jsonStr = match[1].trim();
+    }
+    
+    // Try to extract JSON object if there's extra text
+    const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[0];
+    }
+    
+    const parsed = JSON.parse(jsonStr);
+
+    return {
+      success: true,
+      thinking: parsed.thinking || '',
+      action: parsed.action
+    };
+
+  } catch (error) {
+    console.error('Computer Use API error:', error.response?.data || error.message);
+    
+    // Handle rate limiting
+    if (error.response?.status === 429) {
+      return {
+        success: false,
+        error: 'Rate limited - please wait a moment',
+        rateLimited: true
+      };
+    }
+    
+    // Try to extract partial response for JSON errors
+    if (error instanceof SyntaxError) {
+      return {
+        success: false,
+        error: 'Failed to parse AI response as JSON',
+        raw: error.message
+      };
+    }
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
 
 /**
  * Extract action steps from task
@@ -160,5 +323,6 @@ Assistant:`;
 
 module.exports = {
   getChatResponse,
+  getComputerUseAction,
   isTask
 };

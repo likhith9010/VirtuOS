@@ -6,6 +6,8 @@ const cors = require('cors');
 const { getChatResponse, isTask } = require('./chatBot');
 const vmController = require('./vmController');
 const LiveStreamBridge = require('./liveStream');
+const computerUseAgent = require('./computerUseAgent');
+const actionExecutor = require('./actionExecutor');
 const fs = require('fs');
 const path = require('path');
 
@@ -72,7 +74,9 @@ app.post('/api/vm/:name/stop', async (req, res) => {
 app.get('/api/vm/:name/screenshot', async (req, res) => {
   try {
     const result = await vmController.getVMScreenshot(req.params.name);
-    res.json(result);
+    // Convert absolute path to relative path for frontend
+    const relativePath = path.relative(__dirname, result.path).replace(/\\/g, '/');
+    res.json({ success: true, path: relativePath });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -147,6 +151,62 @@ io.on('connection', (socket) => {
         message: error.message
       });
     }
+  });
+
+  // Handle Computer Use request - starts autonomous agent loop
+  socket.on('computer-use', async (data) => {
+    try {
+      const { task, vmName } = data;
+      const targetVM = vmName || 'Arch Linux';
+      
+      console.log('🖥️ Starting Computer Use for task:', task);
+      
+      // Check VM status first
+      const status = await vmController.getVMStatus(targetVM);
+      if (!status.isRunning) {
+        socket.emit('computer-use-error', {
+          error: 'VM not running',
+          message: 'Please start the VM first'
+        });
+        return;
+      }
+      
+      // Run the computer use agent with real-time updates
+      const result = await computerUseAgent.runComputerUseAgent(task, (event, eventData) => {
+        socket.emit(event, eventData);
+      });
+      
+      // Send final result
+      socket.emit('computer-use-complete', result);
+      
+    } catch (error) {
+      console.error('Computer Use error:', error);
+      socket.emit('computer-use-error', {
+        error: 'Computer Use failed',
+        message: error.message
+      });
+    }
+  });
+
+  // Handle single action execution (for testing/manual control)
+  socket.on('execute-action', async (data) => {
+    try {
+      const { action } = data;
+      console.log('⚡ Executing action:', action);
+      
+      const result = await actionExecutor.executeAction(action);
+      socket.emit('action-result', result);
+      
+    } catch (error) {
+      console.emit('action-error', { error: error.message });
+    }
+  });
+
+  // Handle stop agent request
+  socket.on('stop-agent', () => {
+    console.log('🛑 Stop agent requested');
+    computerUseAgent.stopAgent();
+    socket.emit('agent_stopped', { message: 'Agent stopped by user' });
   });
 
   // Handle disconnection

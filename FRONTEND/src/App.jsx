@@ -13,6 +13,11 @@ function App() {
   const [isConnected, setIsConnected] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
   
+  // Computer Use state
+  const [computerUseActive, setComputerUseActive] = useState(false)
+  const [agentStatus, setAgentStatus] = useState(null)
+  const [agentIteration, setAgentIteration] = useState(0)
+  
   // Chat session management
   const [chats, setChats] = useState([])
   const [activeChat, setActiveChat] = useState(null)
@@ -104,10 +109,142 @@ function App() {
       ))
     })
 
+    // Computer Use event handlers
+    newSocket.on('agent_start', (data) => {
+      console.log('🚀 Agent started:', data)
+      setComputerUseActive(true)
+      setAgentStatus({ phase: 'starting', message: `Starting task: ${data.task}` })
+    })
+
+    newSocket.on('agent_iteration', (data) => {
+      setAgentIteration(data.iteration)
+    })
+
+    newSocket.on('agent_status', (data) => {
+      setAgentStatus(data)
+    })
+
+    newSocket.on('agent_thinking', (data) => {
+      setAgentStatus({ phase: 'thinking', message: data.thinking })
+      // Add thinking to chat
+      setChats(prev => prev.map(chat => 
+        chat.id === activeChat 
+          ? { 
+              ...chat, 
+              messages: [...chat.messages, {
+                role: 'agent',
+                type: 'thinking',
+                content: data.thinking,
+                action: data.action,
+                timestamp: new Date().toISOString()
+              }]
+            }
+          : chat
+      ))
+    })
+
+    newSocket.on('agent_action_result', (data) => {
+      setAgentStatus({ phase: 'act', message: data.description })
+      // Add action result to chat
+      setChats(prev => prev.map(chat => 
+        chat.id === activeChat 
+          ? { 
+              ...chat, 
+              messages: [...chat.messages, {
+                role: 'agent',
+                type: 'action',
+                content: data.description,
+                success: data.success,
+                timestamp: new Date().toISOString()
+              }]
+            }
+          : chat
+      ))
+    })
+
+    newSocket.on('agent_screenshot', (data) => {
+      // Could show real-time screenshot updates
+      console.log('📸 Agent screenshot:', data.iteration)
+    })
+
+    newSocket.on('agent_complete', (data) => {
+      console.log('✅ Agent completed:', data)
+      setComputerUseActive(false)
+      setIsThinking(false)
+      setAgentStatus(null)
+      // Add completion message
+      setChats(prev => prev.map(chat => 
+        chat.id === activeChat 
+          ? { 
+              ...chat, 
+              messages: [...chat.messages, {
+                role: 'assistant',
+                type: 'task',
+                content: data.message,
+                iterations: data.iterations,
+                timestamp: new Date().toISOString()
+              }]
+            }
+          : chat
+      ))
+    })
+
+    newSocket.on('agent_failed', (data) => {
+      console.log('❌ Agent failed:', data)
+      setComputerUseActive(false)
+      setIsThinking(false)
+      setAgentStatus(null)
+      setChats(prev => prev.map(chat => 
+        chat.id === activeChat 
+          ? { 
+              ...chat, 
+              messages: [...chat.messages, {
+                role: 'assistant',
+                content: `Task failed: ${data.message}`,
+                timestamp: new Date().toISOString()
+              }]
+            }
+          : chat
+      ))
+    })
+
+    newSocket.on('computer-use-error', (error) => {
+      console.error('Computer Use error:', error)
+      setComputerUseActive(false)
+      setIsThinking(false)
+      setAgentStatus(null)
+    })
+
+    newSocket.on('agent_stopped', (data) => {
+      console.log('🛑 Agent stopped:', data)
+      setComputerUseActive(false)
+      setIsThinking(false)
+      setAgentStatus(null)
+      setChats(prev => prev.map(chat => 
+        chat.id === activeChat 
+          ? { 
+              ...chat, 
+              messages: [...chat.messages, {
+                role: 'assistant',
+                content: data.message || 'Agent stopped by user',
+                timestamp: new Date().toISOString()
+              }]
+            }
+          : chat
+      ))
+    })
+
     setSocket(newSocket)
 
     return () => newSocket.close()
   }, [activeChat])
+
+  // Handle stop agent
+  const handleStopAgent = () => {
+    if (socket) {
+      socket.emit('stop-agent')
+    }
+  }
 
   // Check if message is a task (for wave animation)
   const isTaskMessage = (message) => {
@@ -118,18 +255,43 @@ function App() {
 
   const handleSendMessage = (message) => {
     if (socket && message.trim()) {
-      // Only show thinking indicator (wave animation) for tasks
-      if (isTaskMessage(message)) {
+      // Check if this is a task that should trigger Computer Use
+      const shouldUseComputerUse = isTaskMessage(message)
+      
+      if (shouldUseComputerUse) {
         setIsThinking(true)
+        
+        // Add user message to chat
+        setChats(prev => prev.map(chat => {
+          if (chat.id === activeChat) {
+            const updatedMessages = [...chat.messages, {
+              role: 'user',
+              content: message,
+              timestamp: new Date().toISOString()
+            }]
+            
+            // Update chat title from first user message
+            if (chat.title === 'New Chat') {
+              const title = message.slice(0, 40) + (message.length > 40 ? '...' : '')
+              return { ...chat, messages: updatedMessages, title }
+            }
+            
+            return { ...chat, messages: updatedMessages }
+          }
+          return chat
+        }))
+        
+        // Start Computer Use agent
+        socket.emit('computer-use', { task: message })
+      } else {
+        // Regular chat message
+        const currentChat = chats.find(chat => chat.id === activeChat)
+        
+        socket.emit('chat-message', {
+          message: message,
+          conversationHistory: currentChat?.messages.filter(msg => msg.role !== 'system') || []
+        })
       }
-      
-      const currentChat = chats.find(chat => chat.id === activeChat)
-      
-      // Send message to backend
-      socket.emit('chat-message', {
-        message: message,
-        conversationHistory: currentChat?.messages.filter(msg => msg.role !== 'system') || []
-      })
     }
   }
 
@@ -252,8 +414,13 @@ function App() {
           
           {/* Main Content Area */}
           <div className="flex-1 flex flex-col bg-white">
-            <ScreenshotsPanel isProcessing={isThinking} />
-            <ChatBox onSendMessage={handleSendMessage} />
+            <ScreenshotsPanel 
+              isProcessing={isThinking} 
+              computerUseActive={computerUseActive}
+              agentStatus={agentStatus}
+              agentIteration={agentIteration}
+            />
+            <ChatBox onSendMessage={handleSendMessage} disabled={computerUseActive} onStopAgent={handleStopAgent} />
           </div>
         </div>
       </div>

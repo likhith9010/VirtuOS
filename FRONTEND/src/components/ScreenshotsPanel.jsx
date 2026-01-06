@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-function ScreenshotsPanel({ isProcessing = false }) {
+function ScreenshotsPanel({ isProcessing = false, computerUseActive = false, agentStatus = null, agentIteration = 0 }) {
   const [vms, setVms] = useState([])
   const [selectedVM, setSelectedVM] = useState(null)
   const [vmStatus, setVMStatus] = useState(null)
@@ -309,8 +309,35 @@ function ScreenshotsPanel({ isProcessing = false }) {
                   <div className="processing-overlay">
                     <div className="processing-indicator">
                       <div className="processing-spinner"></div>
-                      <p className="text-lg font-medium">Processing Task...</p>
-                      <p className="text-sm text-gray-300 mt-1">VirtuOS is working</p>
+                      {computerUseActive ? (
+                        <>
+                          <p className="text-lg font-medium">
+                            {agentStatus?.phase === 'capture' && '📸 Capturing Screen...'}
+                            {agentStatus?.phase === 'think' && '🤔 AI Analyzing...'}
+                            {agentStatus?.phase === 'act' && '⚡ Executing Action...'}
+                            {!agentStatus?.phase && 'Computer Use Active'}
+                          </p>
+                          <p className="text-sm text-gray-300 mt-1">
+                            {agentStatus?.message || `Iteration ${agentIteration}`}
+                          </p>
+                          <div className="mt-3 flex items-center space-x-2">
+                            <div className="flex space-x-1">
+                              {[...Array(Math.min(agentIteration, 10))].map((_, i) => (
+                                <div key={i} className="w-2 h-2 rounded-full bg-orange-400"></div>
+                              ))}
+                              {[...Array(Math.max(0, 10 - agentIteration))].map((_, i) => (
+                                <div key={i} className="w-2 h-2 rounded-full bg-gray-600"></div>
+                              ))}
+                            </div>
+                            <span className="text-xs text-gray-400">{agentIteration}/15</span>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-lg font-medium">Processing Task...</p>
+                          <p className="text-sm text-gray-300 mt-1">VirtuOS is working</p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </>
