@@ -144,6 +144,31 @@ function getImageHash(base64) {
 }
 
 /**
+ * Check if task is a simple single-action task (only opens one known app)
+ * Returns false if task has multiple parts or additional instructions
+ */
+function isSimpleTask(task) {
+  const taskLower = task.toLowerCase().trim();
+  
+  // Check for multi-part indicators
+  const multiPartIndicators = [
+    ' and ', ' then ', ' after ', ' also ', ',', 
+    'search', 'play', 'type', 'go to', 'navigate', 
+    'find', 'watch', 'youtube', 'google', 'yt'
+  ];
+  
+  for (const indicator of multiPartIndicators) {
+    if (taskLower.includes(indicator)) {
+      return false;
+    }
+  }
+  
+  // Simple task patterns: "open X", "launch X", "start X"
+  const simplePatterns = /^(open|launch|start|run)\s+\w+(\s+\w+)?$/i;
+  return simplePatterns.test(taskLower);
+}
+
+/**
  * Run the Computer Use agent loop
  * @param {string} task - The user's task description
  * @param {Function} onUpdate - Callback for progress updates (io.emit)
@@ -168,12 +193,15 @@ async function runComputerUseAgent(task, onUpdate = null) {
   emit('agent_start', { task, maxIterations: MAX_ITERATIONS });
 
   try {
-    // ========== QUICK PATH: Check for known locations first ==========
+    // ========== QUICK PATH: Only for SIMPLE known tasks ==========
     const knownLocation = findKnownLocation(task);
-    if (knownLocation) {
+    const isSimple = isSimpleTask(task);
+    
+    if (knownLocation && isSimple) {
+      // Simple task like "open zenbrowser" - just do it and finish
       emit('agent_status', { 
         phase: 'quick', 
-        message: `Found known location: ${knownLocation.description}` 
+        message: `Simple task detected: ${knownLocation.description}` 
       });
       
       iteration = 1;
@@ -194,7 +222,7 @@ async function runComputerUseAgent(task, onUpdate = null) {
       
       // Emit thinking
       emit('agent_thinking', { 
-        thinking: `I recognize this task! "${knownLocation.key}" is at a known location (${knownLocation.x}, ${knownLocation.y}). I'll click there directly.`,
+        thinking: `Simple task: "${knownLocation.key}" is at known location (${knownLocation.x}, ${knownLocation.y}). Clicking directly.`,
         action: { type: knownLocation.action, x: knownLocation.x, y: knownLocation.y }
       });
       
@@ -247,6 +275,69 @@ async function runComputerUseAgent(task, onUpdate = null) {
           result: actionResult.message
         }]
       };
+    }
+    
+    // ========== HYBRID PATH: Known location + AI for complex tasks ==========
+    if (knownLocation && !isSimple) {
+      emit('agent_status', { 
+        phase: 'quick', 
+        message: `Multi-step task: Starting with ${knownLocation.description}, then AI will continue...` 
+      });
+      
+      iteration = 1;
+      emit('agent_iteration', { iteration, maxIterations: MAX_ITERATIONS });
+      
+      // Take initial screenshot
+      const screenshotResult = await vmController.getVMScreenshot(VM_NAME);
+      if (screenshotResult.success) {
+        const screenshotBuffer = await fs.readFile(screenshotResult.path);
+        const screenshotBase64 = screenshotBuffer.toString('base64');
+        lastScreenHash = getImageHash(screenshotBase64);
+        emit('agent_screenshot', { 
+          path: screenshotResult.path,
+          base64: screenshotBase64,
+          iteration: 1 
+        });
+      }
+      
+      // Emit thinking for first step
+      emit('agent_thinking', { 
+        thinking: `Multi-step task detected. First, I'll open "${knownLocation.key}" using known location (${knownLocation.x}, ${knownLocation.y}). Then AI will handle the rest.`,
+        action: { type: knownLocation.action, x: knownLocation.x, y: knownLocation.y }
+      });
+      
+      // Execute the known action
+      emit('agent_status', { 
+        phase: 'act', 
+        message: `Step 1: Clicking ${knownLocation.description}` 
+      });
+      
+      const action = { type: knownLocation.action, x: knownLocation.x, y: knownLocation.y };
+      const actionResult = await actionExecutor.executeAction(action);
+      
+      history.push({
+        iteration: 1,
+        thinking: `Used known location for ${knownLocation.key}`,
+        action,
+        description: `Click ${knownLocation.description}`,
+        success: actionResult.success,
+        result: actionResult.message,
+        screenChanged: true
+      });
+      
+      emit('agent_action_result', { 
+        action: knownLocation.action,
+        description: `Click at (${knownLocation.x}, ${knownLocation.y}) - ${knownLocation.description}`,
+        success: actionResult.success,
+        message: actionResult.message
+      });
+      
+      // Wait for app to open
+      emit('agent_status', { phase: 'wait', message: 'Waiting for app to open...' });
+      await sleep(3000);
+      
+      // Continue with AI loop for remaining steps
+      emit('agent_status', { phase: 'think', message: 'AI taking over for remaining steps...' });
     }
     
     // ========== NORMAL PATH: AI-driven loop ==========
@@ -472,5 +563,6 @@ module.exports = {
   getGridInfo,
   // Known locations
   KNOWN_LOCATIONS,
-  findKnownLocation
+  findKnownLocation,
+  isSimpleTask
 };

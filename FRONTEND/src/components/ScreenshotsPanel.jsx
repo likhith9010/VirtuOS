@@ -329,7 +329,7 @@ function ScreenshotsPanel({ isProcessing = false, computerUseActive = false, age
                                 <div key={i} className="w-2 h-2 rounded-full bg-gray-600"></div>
                               ))}
                             </div>
-                            <span className="text-xs text-gray-400">{agentIteration}/15</span>
+                            <span className="text-xs text-gray-400">{agentIteration}/10</span>
                           </div>
                         </>
                       ) : (

@@ -55,14 +55,24 @@ async function getComputerUseAction(task, screenshotBase64, context = {}) {
 
   const systemPrompt = `You are a Computer Use AI agent controlling a Linux desktop (Arch Linux with KDE). Analyze the screenshot and decide the NEXT ACTION.
 
-SCREEN: 1920x1080 pixels
-GRID SYSTEM: Screen is divided into 12x8 grid (columns A-L, rows 1-8). Each cell is ~160x135 pixels.
-- Column A: x=0-160, B: x=160-320, C: x=320-480... L: x=1760-1920
-- Row 1: y=0-135, Row 2: y=135-270, Row 3: y=270-405... Row 8: y=945-1080
-- Desktop icons are typically in column A (left side), rows 1-4
+SCREEN LAYOUT (1920x1080 pixels):
+┌─────────────────────────────────────────────────────────────────┐
+│ Desktop Area (0,0) to (1920,700)                                │
+│  - Icons on LEFT edge: x=40-60, y starts at ~50                 │
+│  - First icon: ~(46, 55), Second: ~(46, 165), spacing ~110px    │
+├─────────────────────────────────────────────────────────────────┤
+│ Browser/App Windows typically:                                   │
+│  - URL bar: y ≈ 60-80 from window top                           │
+│  - Search boxes: Look for white input fields                    │
+│  - YouTube search: Around (600, 60) when YT is open             │
+├─────────────────────────────────────────────────────────────────┤
+│ TASKBAR (bottom): y = 740 (not 1080!)                           │
+│  - App Menu: x≈30  | Show Desktop: x≈78  | VLC: x≈128           │
+│  - Settings: x≈178 | Files: x≈228       | Terminal: x≈278      │
+└─────────────────────────────────────────────────────────────────┘
 
 RESPOND WITH ONLY THIS JSON FORMAT (nothing else):
-{"thinking": "what I see and my plan", "action": {"type": "click", "x": 100, "y": 200}}
+{"thinking": "I see [describe UI elements]. I will click [target] at approximately (x, y)", "action": {"type": "click", "x": 100, "y": 200}}
 
 ACTION TYPES:
 - click: {"type": "click", "x": <int>, "y": <int>}
@@ -74,11 +84,13 @@ ACTION TYPES:
 - done: {"type": "done", "message": "Task completed because..."}
 - error: {"type": "error", "message": "Cannot complete because..."}
 
-COORDINATE TIPS:
-- Desktop icons: Usually around x=80-100, first icon y≈100, spacing ~64px between icons
-- Taskbar (bottom): y≈1050, apps spread across bottom
-- Window title bars: Around y=30-50 from window top
-- Close button (X): Top-right of windows
+COMMON UI ELEMENT LOCATIONS:
+- YouTube logo (when open): ~(115, 60)
+- YouTube search box: ~(640, 60) - click then type
+- Google search box: ~(960, 500) on homepage
+- Browser URL bar: ~(400-600, 65) depending on browser
+- Window close (X): Top-right corner of window, ~(1890, 15)
+- Window maximize: ~(1855, 15)
 
 IMPORTANT RULES:
 1. ONE action per response
