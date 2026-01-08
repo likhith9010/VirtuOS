@@ -46,7 +46,7 @@ function ProfilePage({ onClose, initialProfile, onSave }) {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl w-full max-w-md mx-4 shadow-2xl overflow-hidden">
-        {/* Header */}
+        {/* Header 1 */}
         <div className="bg-gradient-to-r from-orange-400 to-orange-600 px-6 py-8 text-center relative">
           <button 
             onClick={onClose}
