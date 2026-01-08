@@ -290,8 +290,8 @@ function App() {
     return taskKeywords.some(keyword => lowerMessage.includes(keyword))
   }
 
-  const handleSendMessage = (message) => {
-    if (socket && message.trim()) {
+  const handleSendMessage = (message, attachedImages = []) => {
+    if (socket && (message.trim() || attachedImages.length > 0)) {
       // Check if this is a task that should trigger Computer Use
       const shouldUseComputerUse = isTaskMessage(message)
       
@@ -304,6 +304,7 @@ function App() {
             const updatedMessages = [...chat.messages, {
               role: 'user',
               content: message,
+              attachments: attachedImages, // Store all attachments for display
               timestamp: new Date().toISOString()
             }]
             
@@ -331,9 +332,11 @@ function App() {
         // Regular chat message
         const currentChat = chats.find(chat => chat.id === activeChat)
         
+        // Send all attachments for display, server will filter images for AI
         socket.emit('chat-message', {
           message: message,
           conversationHistory: currentChat?.messages.filter(msg => msg.role !== 'system') || [],
+          attachments: attachedImages, // All attachments (images + PDFs) for display
           aiSettings: settings ? {
             provider: settings.provider,
             model: settings.model,

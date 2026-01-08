@@ -1,13 +1,55 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 
 function ChatBox({ onSendMessage, disabled = false, onStopAgent = null }) {
   const [message, setMessage] = useState('')
+  const [attachedFiles, setAttachedFiles] = useState([])
+  const [isUploading, setIsUploading] = useState(false)
+  const fileInputRef = useRef(null)
+
+  const handleFileSelect = async (e) => {
+    const files = Array.from(e.target.files)
+    if (files.length === 0) return
+
+    setIsUploading(true)
+    try {
+      const formData = new FormData()
+      files.forEach(file => formData.append('files', file))
+      
+      const response = await fetch('http://localhost:3000/api/upload', {
+        method: 'POST',
+        body: formData
+      })
+      
+      const data = await response.json()
+      if (data.success) {
+        setAttachedFiles(prev => [...prev, ...data.files])
+      } else {
+        alert('Failed to upload: ' + data.error)
+      }
+    } catch (error) {
+      console.error('Upload error:', error)
+      alert('Failed to upload files')
+    }
+    setIsUploading(false)
+    e.target.value = '' // Reset input
+  }
+
+  const removeAttachment = (index) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index))
+  }
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (message.trim() && !disabled) {
-      onSendMessage(message)
+    if ((message.trim() || attachedFiles.length > 0) && !disabled) {
+      // Send all attachments for display, mark type for AI context (only images sent to AI)
+      const attachments = attachedFiles.map(f => ({
+        name: f.originalName,
+        path: f.type === 'image' ? `images/${f.filename}` : `pdfs/${f.filename}`,
+        type: f.type
+      }))
+      onSendMessage(message, attachments)
       setMessage('')
+      setAttachedFiles([])
     }
   }
 
@@ -27,14 +69,75 @@ function ChatBox({ onSendMessage, disabled = false, onStopAgent = null }) {
   return (
     <div className="p-4 border-t border-gray-200">
       <div className="max-w-4xl mx-auto">
+        {/* Attached Files Preview */}
+        {attachedFiles.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {attachedFiles.map((file, index) => (
+              <div 
+                key={index} 
+                className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-sm ${
+                  file.type === 'image' 
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200' 
+                    : 'bg-red-50 text-red-700 border border-red-200'
+                }`}
+              >
+                {file.type === 'image' ? (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                )}
+                <span className="truncate max-w-[150px]">{file.originalName}</span>
+                <button 
+                  onClick={() => removeAttachment(index)}
+                  className="hover:bg-gray-200 rounded p-0.5"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit}>
           <div className={`flex items-center space-x-2 border rounded-xl px-4 py-3 bg-white shadow-sm ${
             disabled ? 'border-orange-300 bg-orange-50' : 'border-gray-300'
           }`}>
-            <button type="button" disabled={disabled} className="text-gray-400 hover:text-orange-500 hover:bg-orange-50 p-1 rounded transition-colors disabled:opacity-50">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
+            {/* Hidden file input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              accept="image/*,.pdf"
+              multiple
+              className="hidden"
+            />
+            {/* Plus button - opens file picker */}
+            <button 
+              type="button" 
+              disabled={disabled || isUploading} 
+              onClick={() => fileInputRef.current?.click()}
+              className={`p-1 rounded transition-colors ${
+                isUploading 
+                  ? 'text-orange-500 animate-spin' 
+                  : 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
+              } disabled:opacity-50`}
+              title="Attach images or PDFs"
+            >
+              {isUploading ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              )}
             </button>
             <input 
               type="text" 

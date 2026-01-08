@@ -107,6 +107,33 @@ async function getVMScreenshot(vmName) {
     const screenshotsDir = path.join(__dirname, 'screenshots');
     await fs.mkdir(screenshotsDir, { recursive: true }).catch(() => {});
     
+    // Auto-cleanup: delete oldest 200 when folder hits 400 screenshots
+    try {
+      const files = await fs.readdir(screenshotsDir);
+      const pngFiles = files.filter(f => f.endsWith('.png'));
+      
+      if (pngFiles.length >= 400) {
+        console.log(`📁 Screenshots folder has ${pngFiles.length} files. Cleaning up oldest 200...`);
+        
+        // Get file stats and sort by creation time (oldest first)
+        const fileStats = await Promise.all(
+          pngFiles.map(async (file) => {
+            const filePath = path.join(screenshotsDir, file);
+            const stat = await fs.stat(filePath);
+            return { file, filePath, mtime: stat.mtime.getTime() };
+          })
+        );
+        fileStats.sort((a, b) => a.mtime - b.mtime);
+        
+        // Delete oldest 200 files
+        const toDelete = fileStats.slice(0, 200);
+        await Promise.all(toDelete.map(f => fs.unlink(f.filePath).catch(() => {})));
+        console.log(`🗑️ Deleted ${toDelete.length} old screenshots`);
+      }
+    } catch (cleanupError) {
+      console.error('Screenshot cleanup error:', cleanupError.message);
+    }
+    
     const screenshotPath = path.join(screenshotsDir, `screenshot_${Date.now()}.png`);
     await execPromise(`"${VBOX_MANAGE}" controlvm "${vmName}" screenshotpng "${screenshotPath}"`);
     return { success: true, path: screenshotPath };

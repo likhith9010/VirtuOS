@@ -23,11 +23,15 @@
    cd ..
    ```
 
-4. **Configure Backend API Key:**
-   - Create `.env` file in `BACKEND` folder
-   - Add your Google Gemini API key:
+4. **Configure AI Provider (Optional):**
+   - API keys can be configured in the app's Settings page
+   - Supports: Google Gemini (default), OpenAI, Anthropic, xAI
+   - Or create `.env` file in `BACKEND` folder:
      ```
-     GEMINI_API_KEY=your-api-key-here
+     GEMINI_API_KEY=your-gemini-key
+     OPENAI_API_KEY=your-openai-key
+     ANTHROPIC_API_KEY=your-anthropic-key
+     XAI_API_KEY=your-xai-key
      ```
 
 5. **Run in development mode:**
@@ -36,6 +40,7 @@
    ```
    This will start:
    - Backend server on http://localhost:3000
+   - VNC Bridge on port 6080
    - Frontend dev server on http://localhost:5173
    - Electron app
 
@@ -81,14 +86,30 @@ npm start
 ## Architecture
 
 - **Electron Main Process:** Manages app window and backend server
-- **Frontend:** React + Vite (runs in Electron renderer)
-- **Backend:** Node.js Express server (embedded in Electron)
+- **Frontend:** React 19 + Vite + Tailwind CSS (runs in Electron renderer)
+- **Backend:** Node.js Express + Socket.IO server (embedded in Electron)
+- **VNC Bridge:** WebSocket-to-TCP proxy for VM display (port 6080)
+- **VM:** VirtualBox Arch Linux with KDE (VRDE on port 5000)
 - **Communication:** Socket.IO for real-time messaging
+
+## Ports Used
+
+| Port | Service | Purpose |
+|------|---------|---------|
+| 3000 | Backend API | REST endpoints, Socket.IO |
+| 5000 | VirtualBox VRDE | VM screen output (VNC) |
+| 5173 | Frontend Dev | React app, noVNC client |
+| 6080 | VNC Bridge | WebSocket proxy for browser |
 
 ## Features
 
 ✅ Cross-platform desktop application
 ✅ Embedded backend server
 ✅ Real-time AI chat interface
-✅ Auto-updates support (can be configured)
+✅ Live VM display via noVNC (30+ FPS)
+✅ Computer Use Agent (AI-controlled VM)
+✅ Multi-provider AI support (Gemini, OpenAI, Claude, Grok)
+✅ File attachments (images + PDFs)
+✅ Screenshot capture and auto-cleanup
 ✅ Native OS integration
+

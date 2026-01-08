@@ -150,6 +150,32 @@ function ChatArea({ messages, isConnected, isThinking }) {
                         ? 'bg-gradient-to-br from-orange-400 to-orange-500 text-white' 
                         : 'bg-gray-50 text-gray-800 border border-gray-100'
                     }`}>
+                      {/* Attached files for user messages */}
+                      {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {msg.attachments.map((file, idx) => (
+                            <div key={idx} className="flex flex-col items-center bg-white/20 rounded-lg p-1.5 min-w-[70px]">
+                              {file.type === 'pdf' ? (
+                                <div className="w-12 h-12 bg-red-500 rounded-lg flex items-center justify-center">
+                                  <svg className="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zm-1 2l5 5h-5V4zM6 20V4h6v6h6v10H6z"/>
+                                    <path d="M8 12h8v2H8v-2zm0 4h8v2H8v-2z"/>
+                                  </svg>
+                                </div>
+                              ) : (
+                                <img 
+                                  src={`http://localhost:3000/${file.path}`}
+                                  alt={file.name}
+                                  className="w-12 h-12 object-cover rounded-lg"
+                                />
+                              )}
+                              <span className="text-[10px] text-white/90 mt-1 truncate max-w-[65px]" title={file.name}>
+                                {file.name}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
                     </div>
                 

@@ -4,7 +4,7 @@
 
 **VirtuOS** is a Computer Use Agent system inspired by Anthropic's Computer Use demo. The goal is to create an Electron desktop application that provides real-time interactive control of a VirtualBox VM (Arch Linux), enabling AI agents to control the VM through visual feedback and input simulation (mouse/keyboard).
 
-### Architecture
+### Tech Stack
 - **Frontend**: React 19 + Vite + Tailwind CSS (port 5173)
 - **Backend**: Node.js + Express + Socket.IO (port 3000)  
 - **Desktop**: Electron 28 wrapper
@@ -19,268 +19,367 @@
 
 ---
 
-## Attempted Solutions & Failures
+## Application Features
 
-### Attempt 1: noVNC (VNC over WebSocket)
-**Implementation**:
-- Tried using `@novnc/novnc` library for browser-based VNC client
-- Plan was to run VNC server in VM, connect via noVNC in React
+### Sidebar (Left Panel)
+The sidebar serves as the primary navigation and chat management interface:
 
-**Problem**: 
-- noVNC uses ES modules with top-level `await`
-- Incompatible with Vite bundler - cannot be imported
-- Vite build fails with module resolution errors
+- **New Chat Button**: Creates a fresh conversation session with a unique ID and timestamp
+- **Chat History List**: Displays all previous conversations with truncated titles (first 40 characters of the initial message)
+- **Active Chat Indicator**: Highlights the currently selected conversation with visual styling
+- **Chat Selection**: Click any chat to switch context and load its message history
+- **Delete Chat**: Remove conversations from history (with confirmation)
+- **Persistent Storage**: Chat history is preserved in localStorage for session persistence
 
-**Status**: ❌ Abandoned
+### Navbar (Top Bar)
+The top navigation bar provides global controls and status information:
+
+- **App Branding**: VirtuOS logo and title
+- **Connection Status**: Real-time indicator showing backend connectivity (green = connected, red = disconnected)
+- **Settings Access**: Opens the settings modal for AI provider configuration
+- **VM Controls**: Quick access buttons for VM power operations (start/stop)
+- **Agent Status**: Shows current Computer Use agent state (idle, thinking, executing)
+
+### Chat Area (Center Panel)
+The chat area is the main conversation display between the user and AI:
+
+- **Welcome Screen**: Displayed when no messages exist, featuring:
+  - Animated icon with pulsing effect
+  - Helpful prompt suggestions (e.g., "Open YouTube and play a song")
+  - Quick-start task buttons for common operations
+
+- **Message Display**: 
+  - **User Messages**: Right-aligned orange gradient bubbles with white text
+  - **Assistant Messages**: Left-aligned gray bubbles with VirtuOS avatar
+  - **Agent Thinking**: Blue bubbles showing AI reasoning process
+  - **Agent Actions**: Green (success) or red (failure) action confirmations
+
+- **Attachments Support**:
+  - Images display as 48x48 thumbnails with filename
+  - PDFs show red document icon with filename
+  - Hover tooltips for truncated filenames
+
+- **Screenshot Previews**: Task responses include clickable VM screenshots
+- **Auto-scroll**: Automatically scrolls to latest messages
+- **Iteration Counter**: Shows number of steps taken for complex tasks
+
+### ChatBox (Input Area)
+The message input component at the bottom of the chat area:
+
+- **Text Input**: Multi-purpose textarea for messages and task commands
+- **File Attachment Button (+)**: Opens file picker for images and PDFs
+  - Accepts: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.pdf`
+  - Multiple file selection supported
+  - Files uploaded to server (`/api/upload`) and stored in `images/` or `pdfs/` folders
+
+- **Attachment Preview**: Shows attached files as removable chips
+  - Blue chips for images
+  - Red chips for PDFs
+  - Click X to remove before sending
+
+- **Send Button**: Submits message with any attachments
+- **Keyboard Shortcut**: Enter to send (Shift+Enter for new line)
+- **Stop Button**: Appears during agent execution to cancel ongoing tasks
+
+### VM Viewer Area (Right Panel)
+Displays the live virtual machine screen for visual feedback and interaction. This area embeds the VM display using VNC streaming, enabling real-time viewing and control of the Arch Linux VM. *Detailed implementation covered in Computer Use & VNC + Websockify Integration section.*
+
+---
+## VNC + Websockify Integration
+
+### The Challenge
+Embedding a live, interactive VM display inside an Electron app is non-trivial. Traditional approaches like capturing screenshots in a loop create laggy, non-interactive experiences. We needed:
+- Real-time screen updates (30+ FPS)
+- Full mouse and keyboard interaction
+- No external windows or RDP clients
+- Low latency suitable for AI agent control
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     VirtuOS Electron App                        │
+│  ┌─────────────┐    ┌──────────────┐    ┌───────────────────┐  │
+│  │   React     │    │   noVNC      │    │    VNC Bridge     │  │
+│  │  Frontend   │───▶│   Client     │───▶│   (vncBridge.js)  │  │
+│  │  (iframe)   │    │   (vnc.html) │    │   Port 6080       │  │
+│  └─────────────┘    └──────────────┘    └─────────┬─────────┘  │
+└─────────────────────────────────────────────────────│───────────┘
+                                                      │ WebSocket
+                                                      │ to TCP
+                                                      ▼
+                                          ┌───────────────────┐
+                                          │  VirtualBox VRDE  │
+                                          │   (VNC Server)    │
+                                          │    Port 5000      │
+                                          └─────────┬─────────┘
+                                                    │
+                                                    ▼
+                                          ┌───────────────────┐
+                                          │   Arch Linux VM   │
+                                          │   (KDE Plasma)    │
+                                          │   1280x800        │
+                                          └───────────────────┘
+```
+
+### Components Explained
+
+#### 1. VirtualBox VRDE (Port 5000)
+VirtualBox has a built-in remote display server called VRDE (VirtualBox Remote Desktop Extension). When the VM starts, we enable VRDE which exposes the VM screen via VNC protocol on port 5000. The `vmController.js` handles enabling VRDE and setting the port before starting the VM in GUI mode.
+
+#### 2. VNC WebSocket Bridge (Port 6080)
+Browsers can't connect directly to VNC (TCP) servers. The `vncBridge.js` acts as a WebSocket-to-TCP proxy that:
+- Listens for WebSocket connections on port 6080
+- Opens a TCP connection to VirtualBox VRDE on port 5000
+- Forwards all data bidirectionally between WebSocket and TCP
+
+#### 3. noVNC Client (vnc.html)
+noVNC is a JavaScript VNC client that runs entirely in the browser. We load it via CDN in an iframe (`/vnc.html`). It connects to the WebSocket bridge and renders the VM screen with configurable quality and compression settings. On successful connection, it notifies the parent React app via `postMessage`.
+
+#### 4. React Integration (ScreenshotsPanel.jsx)
+The ScreenshotsPanel component embeds vnc.html in an iframe and manages connection state. It listens for messages from the iframe to update the VNC connection status indicator (connected/disconnected).
+
+### Files Structure
+
+| File | Purpose |
+|------|---------|
+| `BACKEND/vncBridge.js` | WebSocket-to-VNC bridge server |
+| `BACKEND/server.js` | Starts VNC bridge on port 6080 |
+| `BACKEND/vmController.js` | Enables VRDE on port 5000 |
+| `FRONTEND/public/vnc.html` | noVNC client page |
+| `FRONTEND/src/components/ScreenshotsPanel.jsx` | Live View tab with VNC viewer |
+
+### VM Panel Tabs
+
+The ScreenshotsPanel provides three tabs:
+
+1. **Controls Tab**: Start/Stop VM buttons with status indicator
+2. **Screenshots Tab**: Manual screenshot capture for documentation and debugging
+3. **Live View Tab**: Real-time interactive VM display (30+ FPS)
+
+### Full Interaction Capabilities
+
+Once connected, users can:
+- **Mouse**: Click anywhere in the display to interact with the VM
+- **Keyboard**: Type directly - input goes to the VM
+- **Cursor**: Mouse movement works inside the VM
+- **Real-time**: 30+ FPS screen updates for smooth experience
+
+### Automated Startup Flow
+
+When the app launches, the following happens automatically:
+
+1. **Backend Server Starts** (`npm run dev:backend`)
+   - Express server on port 3000
+   - VNC Bridge starts on port 6080
+   
+2. **Frontend Dev Server Starts** (`npm run dev:frontend`)
+   - Vite serves React app on port 5173
+   - vnc.html available at `/vnc.html`
+
+3. **User Clicks "Start VM"**
+   - API call to `/api/vm/:name/start`
+   - VBoxManage enables VRDE on port 5000
+   - the commands:xhost +local:  | x0vncserver -display :0 -SecurityTypes None &  |websockify 0.0.0.0:6080 localhost:5900 | to integrate VM to app is automated using a startup script.
+   - VBoxManage starts VM in GUI mode
+   - VM boots into KDE Plasma desktop
+
+4. **User Switches to "Live View" Tab**
+   - iframe loads `/vnc.html`
+   - noVNC connects to `ws://127.0.0.1:6080`
+   - VNC Bridge connects to VirtualBox VRDE on port 5000
+   - Live display appears with full interaction
+
+### Port Summary
+
+| Port | Service | Protocol | Purpose |
+|------|---------|----------|---------|
+| 3000 | Backend API | HTTP | REST endpoints, Socket.IO |
+| 5000 | VirtualBox VRDE | VNC/TCP | VM screen output |
+| 5173 | Frontend Dev | HTTP | React app, vnc.html |
+| 6080 | VNC Bridge | WebSocket | Browser-to-VNC proxy |
+
+### Troubleshooting
+
+**If Live View doesn't connect:**
+1. Verify VM is running (Controls tab should show "running")
+2. Check browser console for connection errors
+3. Ensure VNC bridge started (backend logs should show "VNC WebSocket bridge listening on port 6080")
+4. Try restarting the VM
+
+**Performance Notes:**
+- Live View: 30+ FPS, full interaction
+- Screenshots: On-demand captures, useful for AI agent logging
+
+### Why This Approach Works
+
+1. **No External Dependencies**: Everything runs locally, no cloud services
+2. **Full Interaction**: Mouse clicks, keyboard input all work natively
+3. **Low Latency**: Direct WebSocket connection, no polling
+4. **Browser Compatible**: Works in Electron's Chromium without plugins
+5. **Scalable**: Could connect to remote VMs by changing VRDE host
 
 ---
 
-### Attempt 2: Custom VNC WebSocket Bridge
-**Implementation**:
-- Created `vncBridge.js` - Node.js WebSocket server
-- VNC client (`rfb2`) connecting to VM
-- Browser connects to bridge via WebSocket
-- Forward VNC protocol through WebSocket
+## Computer Use Agent
 
-**Problem**:
-- WebSocket connection established successfully
-- VNC protocol handshake fails - no frames received
-- Connection drops immediately after connecting
-- `rfb2` library appears to have compatibility issues with VirtualBox VNC
+### Overview
+The Computer Use Agent is the brain of VirtuOS - an AI-powered autonomous system that can see, think, and act on the VM just like a human would. Inspired by Anthropic's Computer Use demo, it implements a continuous **See → Think → Act → Loop** cycle to complete user tasks.
 
-**Status**: ❌ Abandoned
+### The See-Think-Act Loop
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    COMPUTER USE AGENT LOOP                       │
+│                                                                  │
+│   ┌─────────┐     ┌─────────┐     ┌─────────┐     ┌─────────┐   │
+│   │   SEE   │────▶│  THINK  │────▶│   ACT   │────▶│  LOOP   │   │
+│   │         │     │         │     │         │     │         │   │
+│   │Capture  │     │AI Vision│     │Execute  │     │Check if │   │
+│   │Screen   │     │Analysis │     │Action   │     │Complete │   │
+│   └─────────┘     └─────────┘     └─────────┘     └────┬────┘   │
+│        ▲                                               │        │
+│        └───────────────────────────────────────────────┘        │
+│                         (if not done)                           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+1. **SEE**: Capture a screenshot of the current VM screen
+2. **THINK**: Send screenshot to AI vision model for analysis
+3. **ACT**: Execute the AI's recommended action (click, type, etc.)
+4. **LOOP**: Check if task is complete, if not, repeat
+
+### Architecture Components
+
+#### 1. computerUseAgent.js (Orchestrator)
+The main controller that manages the agent loop:
+
+- **Task Reception**: Receives user task from frontend via Socket.IO
+- **Screenshot Capture**: Uses `vmController.getVMScreenshot()` to capture VM state
+- **AI Coordination**: Sends screenshots to `chatBot.getComputerUseAction()`
+- **Action Execution**: Forwards AI decisions to `actionExecutor.executeAction()`
+- **Progress Emission**: Real-time updates via Socket.IO events
+- **Loop Management**: Handles iteration limits, completion detection, and stop signals
+
+#### 2. chatBot.js (AI Brain)
+Handles communication with vision-capable AI models:
+
+- **Multi-Provider Support**: Google Gemini, OpenAI GPT-4V, Anthropic Claude, xAI Grok
+- **Vision Analysis**: Sends screenshot + task context to AI
+- **Action Generation**: AI returns structured JSON with next action
+- **Screen Layout Hints**: Provides coordinate guides for 1280x800 resolution
+- **Action History**: Includes previous actions to prevent loops
+
+#### 3. actionExecutor.js (Hands)
+Translates AI decisions into VM input events:
+
+- **Click Actions**: `click`, `double_click`, `right_click` at (x, y)
+- **Keyboard Actions**: `type` text, `key_press` (enter, escape, ctrl+c, etc.)
+- **Mouse Actions**: `scroll`, `drag`, `move`
+- **Control Actions**: `wait`, `screenshot`, `done`, `error`
+
+#### 4. vmController.js (VM Interface)
+Low-level VM control via SSH:
+
+- **Screenshot Capture**: `scrot` command captures PNG to file
+- **Mouse Control**: `xdotool mousemove` and `xdotool click`
+- **Keyboard Control**: `xdotool type` and `xdotool key`
+- **Window Management**: Focus, resize, close windows
+
+### Execution Paths
+
+The agent has three execution paths based on task complexity:
+
+#### Quick Path (Simple Known Tasks)
+For simple tasks like "open browser", the agent skips AI entirely:
+- Matches task against `KNOWN_LOCATIONS` dictionary
+- Directly clicks pre-mapped coordinates
+- Completes in 1 iteration (~2 seconds)
+
+#### Hybrid Path (Complex Tasks with Known Start)
+For tasks like "open browser and search for cats":
+- First action uses known location (fast)
+- Remaining steps use AI analysis (accurate)
+- Combines speed with flexibility
+
+#### AI Path (Unknown Tasks)
+For complex or novel tasks:
+- Full AI analysis at every step
+- Maximum flexibility but slower
+- Up to 10 iterations with rate limiting
+
+### AI Prompt Engineering
+
+The AI receives a detailed system prompt including:
+
+**Screen Layout Map**:
+- Desktop area coordinates (0,0 to 1280,700)
+- Icon positions and spacing
+- Taskbar element locations
+- Common UI element coordinates
+
+**Action Types**:
+- All supported action formats with examples
+- JSON schema for responses
+
+**Intelligence Rules**:
+- One action per response
+- Click center of elements
+- Never repeat failed actions
+- Detect completion states
+
+**Context Information**:
+- Previous actions with success/failure status
+- Screen change detection warnings
+- Current iteration count
+
+### Real-Time Feedback
+
+The agent emits Socket.IO events throughout execution:
+
+| Event | Data | Purpose |
+|-------|------|---------|
+| `agent_start` | task, maxIterations | Task begins |
+| `agent_iteration` | iteration, maxIterations | Loop progress |
+| `agent_status` | phase, message | Current phase |
+| `agent_screenshot` | base64, path | Screen capture |
+| `agent_thinking` | thinking, action | AI reasoning |
+| `agent_action_result` | success, message | Action outcome |
+| `agent_complete` | message, iterations | Task done |
+| `agent_stopped` | message | User cancelled |
+| `agent_error` | message | Error occurred |
+
+### Screen Change Detection
+
+The agent tracks if actions are effective:
+
+- **Hash Comparison**: Compares screenshot hashes between iterations
+- **Same Screen Counter**: Tracks consecutive unchanged screens
+- **Warning System**: After 3 unchanged screens, alerts AI to try different approach
+- **Prevents Loops**: AI instructed never to repeat exact same failed action
+
+### Known Locations Dictionary
+
+Pre-mapped coordinates for common elements (1280x800 resolution):
+
+**Desktop Icons** (x ≈ 46):
+- VLC: (46, 55)
+- Zen Browser: (46, 165)
+
+**Taskbar** (y = 752):
+- App Menu: (26, 752)
+- Show Desktop: (68, 752)
+- VLC: (112, 752)
+- Settings: (156, 752)
+- File Manager: (200, 752)
+- Terminal: (244, 752)
+
+### Safety Features
+
+- **Max Iterations**: Hard limit of 10 iterations per task
+- **Stop Button**: User can cancel at any time via `stop-agent` event
+- **Rate Limiting**: 12-second delay between API calls (5 RPM limit)
+- **Error Recovery**: Graceful handling of screenshot/action failures
+- **Timeout Protection**: Prevents infinite loops
 
 ---
-
-### Attempt 3: RDP with VRDE (Current Approach)
-**Implementation**:
-- VirtualBox VRDE (VirtualBox Remote Desktop Extension) on port 5000
-- `node-rdpjs-2` library for RDP protocol handling
-- `rdpBridge.js` - WebSocket-to-RDP bridge on port 6080
-- `RDPViewer.jsx` - React component with canvas rendering
-
-**Configuration**:
-```bash
-VBoxManage modifyvm "Arch Linux" --vrde on --vrdeport 5000
-VBoxManage startvm "Arch Linux" --type headless
-```
-
-**Current Status**:
-```
-VRDE: enabled (Address 0.0.0.0, Ports 5000, MultiConn: off)
-VRDE Connection: not active
-Extension Packs: 0
-```
-
-**Problem - ROOT CAUSE IDENTIFIED**:
-```
-Error: connect ECONNREFUSED ::1:5000
-Error: connect ECONNREFUSED 127.0.0.1:5000
-```
-
-**VirtualBox VRDE requires the proprietary "Oracle VM VirtualBox Extension Pack"** to function. Without it:
-- VRDE server shows as "enabled" but won't accept connections
-- All RDP connection attempts are refused
-- No way to connect via RDP protocol
-
-**Extension Pack Status**: Not installed (due to Oracle licensing restrictions)
-
-**Status**: ❌ Blocked by Extension Pack requirement
-
----
-
-## Technical Constraints
-
-### VirtualBox Limitations
-1. **VRDE/RDP**: Requires Extension Pack (proprietary license)
-2. **VNC**: Not natively supported by VirtualBox
-3. **Framebuffer API**: Requires VirtualBox SDK, complex C++ bindings
-4. **Guest Additions**: Would require installing inside VM, doesn't provide remote display
-
-### Protocol Challenges
-- **VNC**: Requires VNC server installed in guest OS, complex setup
-- **RDP**: Extension Pack required
-- **SPICE**: Not supported by VirtualBox (KVM/QEMU only)
-- **WebRTC**: No existing VirtualBox integration
-
-### JavaScript/Node.js Ecosystem
-- **noVNC**: Module compatibility issues with modern bundlers
-- **rfb2**: VNC library seems unmaintained, connection issues
-- **node-rdpjs-2**: Works but can't connect due to Extension Pack
-
----
-
-## Current Codebase State
-
-### Backend Components
-
-**rdpBridge.js** (Port 6080):
-```javascript
-- WebSocket server listening
-- node-rdpjs-2 client attempting to connect to localhost:5000
-- Bitmap event handlers for screen updates
-- Mouse/keyboard event forwarding
-- Error handling implemented
-```
-
-**vmController.js**:
-```javascript
-- VBoxManage CLI wrapper
-- VM start/stop/status functions
-- VRDE configuration (--vrde on --vrdeport 5000)
-- Screenshot capture (working, but not real-time)
-```
-
-**server.js**:
-```javascript
-- Express API on port 3000
-- Socket.IO for client communication
-- RDP bridge initialization
-- VM control endpoints (/api/vm/*)
-```
-
-### Frontend Components
-
-**RDPViewer.jsx**:
-```javascript
-- Canvas-based display (1280x720)
-- WebSocket connection to ws://localhost:6080
-- Mouse event handlers (move, click, drag)
-- Keyboard event handlers
-- Base64 image rendering
-```
-
-**ScreenshotsPanel.jsx**:
-```javascript
-- Three tabs: Controls, Screenshots, Live View
-- VM start/stop controls
-- Manual screenshot capture
-- RDPViewer integration in Live View tab
-```
-
----
-
-## What We Need
-
-### Essential Requirements
-1. **Working remote display protocol** that:
-   - Works with VirtualBox without Extension Pack
-   - Can be accessed from Node.js
-   - Supports real-time screen updates (<100ms)
-   - Works on Windows host
-
-2. **Bidirectional input control**:
-   - Send mouse coordinates and clicks to VM
-   - Send keyboard events to VM
-   - Accurate coordinate mapping
-
-3. **Browser-compatible streaming**:
-   - Can be displayed in Electron/Chromium
-   - Preferably canvas-based rendering
-   - Low overhead encoding (PNG, JPEG, or raw pixels)
-
-### Possible Solutions We Haven't Tried
-
-1. **VirtualBox Web Service API (vboxwebsrv)**:
-   - SOAP/REST API for VM control
-   - Might have framebuffer access
-   - Need to investigate capabilities
-
-2. **Direct Framebuffer Access**:
-   - VirtualBox SDK native bindings
-   - Read framebuffer directly from VM memory
-   - Would require native Node.js addon
-
-3. **Alternative Hypervisors**:
-   - QEMU/KVM with SPICE protocol
-   - VMware with VNC
-   - Hyper-V with Enhanced Session Mode
-
-4. **X11 Forwarding** (Linux guest specific):
-   - Forward X11 display over network
-   - Render in Electron via Xpra or similar
-   - Would only work for X11 applications
-
-5. **Install Extension Pack**:
-   - Download from Oracle website
-   - Install: `VBoxManage extpack install <file>`
-   - Accept Oracle license terms
-   - Would make VRDE/RDP work immediately
-
----
-
-## Questions for Community/Experts
-
-1. **Is there a way to access VirtualBox VM display without Extension Pack?**
-   - Any alternative protocols?
-   - Direct framebuffer reading?
-   - VirtualBox API capabilities?
-
-2. **Has anyone successfully embedded VirtualBox display in Electron app?**
-   - What protocol/library did you use?
-   - How did you handle input forwarding?
-
-3. **Are there Node.js bindings for VirtualBox SDK?**
-   - Can we access IFramebuffer interface?
-   - Sample code or examples?
-
-4. **Alternative approaches to screenshot polling?**
-   - Can we get diff-based updates?
-   - Faster capture methods?
-   - Event-driven screen change notifications?
-
-5. **Should we switch hypervisors?**
-   - Would QEMU/KVM be easier for this use case?
-   - Docker with X11 passthrough?
-   - Windows Subsystem for Linux GUI?
-
----
-
-## Performance Considerations
-
-### Current Screenshot Approach Issues
-- Manual capture only (not real-time)
-- VBoxManage CLI overhead (~200-500ms per screenshot)
-- File I/O bottleneck (write PNG → read → send → delete)
-- Not suitable for interactive control
-
-### Target Metrics
-- **Frame rate**: 10-30 FPS minimum
-- **Input latency**: <100ms click-to-response
-- **Network overhead**: <1MB/s for 720p stream
-- **CPU usage**: <20% on host
-
----
-
-## Development Environment
-
-### System Info
-- **Host OS**: Windows 11
-- **VirtualBox**: Latest version (no Extension Pack)
-- **Node.js**: v20+
-- **VM**: Arch Linux (headless mode)
-- **Dev Tools**: VS Code, PowerShell
-
-### Package Versions
-```json
-{
-  "electron": "^28.0.0",
-  "react": "^19.0.0",
-  "vite": "^7.2.7",
-  "socket.io": "^4.8.1",
-  "node-rdpjs-2": "^0.4.0"
-}
-```
-
----
-
-## Conclusion
-
-We're stuck at the remote display layer. Every browser-compatible protocol we've tried either:
-1. Has library/compatibility issues (noVNC, rfb2)
-2. Requires proprietary software we don't have (Extension Pack)
-3. Isn't supported by VirtualBox natively (SPICE, WebRTC)
-
-**We need a working solution for real-time VM display and input control that works with VirtualBox on Windows without the Extension Pack, or guidance on whether we should pivot to a different virtualization technology entirely.**
-
-Any suggestions, alternative approaches, or technical guidance would be greatly appreciated.

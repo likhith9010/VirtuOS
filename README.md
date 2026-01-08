@@ -1,6 +1,42 @@
-# VirtuOS Setup Guide
+# VirtuOS - AI-Powered Computer Use Agent
 
-## Backend Setup
+> *A voice command today, a revolution tomorrow.*
+
+## 👨‍💻 About the Creator
+
+Hi, I'm **Likhith** — an Electronics Engineer with a passion for backend and full-stack development. I'm fascinated by the intersection of AI and wearable technology, particularly devices like **Google XR Glasses** and **Meta Ray-Ban Smart Glasses** with integrated vision capabilities.
+
+### Why I Built VirtuOS
+
+VirtuOS isn't just a project — it's a **demonstration of what's possible** when AI meets computer vision and autonomous control. 
+
+Imagine this: You're wearing smart glasses, and with a simple voice command like *"Book me a flight to Tokyo"* or *"Find the best deal on a laptop"*, an AI agent takes over — seeing your screen, clicking buttons, filling forms, and completing the task autonomously. **No hands. No keyboard. Just intent.**
+
+This is the future I'm building towards. VirtuOS serves as:
+- 🎯 A **proof of concept** for AI-driven computer automation
+- 🔬 A **demonstration of my capabilities** in full-stack development, real-time systems, and AI integration
+- 🚀 A **foundation** for the next generation of hands-free computing interfaces
+
+### My Vision
+
+Smart glasses with vision AI will transform how we interact with computers. Instead of being tied to screens, we'll simply describe what we want — and AI agents will execute. VirtuOS is my contribution to making that future a reality.
+
+---
+
+## 🌟 Features
+
+- **Live VM Display**: Real-time 30+ FPS streaming via noVNC
+- **Computer Use Agent**: AI sees, thinks, and acts autonomously
+- **Multi-Provider AI**: Support for Google Gemini, OpenAI GPT-4V, Anthropic Claude, xAI Grok
+- **Natural Language Tasks**: Just describe what you want done
+- **File Attachments**: Share images and PDFs for context
+- **Real-time Feedback**: Watch the AI's reasoning and actions live
+
+---
+
+## 🛠️ Setup Guide
+
+### Backend Setup
 
 1. **Navigate to BACKEND folder:**
    ```bash
@@ -12,16 +48,15 @@
    npm install
    ```
 
-3. **Configure API Key:**
-   - Copy `.env.example` to `.env`:
-     ```bash
-     cp .env.example .env
+3. **Configure API Keys (Optional):**
+   - API keys can be set in the app's **Settings** page
+   - Or create `.env` file:
      ```
-   - Edit `.env` file and add your OpenAI API key:
+     GEMINI_API_KEY=your-gemini-key
+     OPENAI_API_KEY=your-openai-key
+     ANTHROPIC_API_KEY=your-anthropic-key
+     XAI_API_KEY=your-xai-key
      ```
-     OPENAI_API_KEY=sk-your-actual-api-key-here
-     ```
-   - Get your API key from: https://platform.openai.com/api-keys
 
 4. **Start the backend server:**
    ```bash
@@ -36,16 +71,16 @@ Backend will run on: http://localhost:3000
 
 ---
 
-## Frontend Setup
+### Frontend Setup
 
 1. **Navigate to FRONTEND folder:**
    ```bash
    cd FRONTEND
    ```
 
-2. **Install socket.io-client:**
+2. **Install dependencies:**
    ```bash
-   npm install socket.io-client
+   npm install
    ```
 
 3. **Start the development server:**
@@ -57,48 +92,96 @@ Frontend will run on: http://localhost:5173
 
 ---
 
-## Usage
+### Full App (Recommended)
 
-1. Make sure both backend (port 3000) and frontend (port 5173) are running
-2. Open http://localhost:5173 in your browser
-3. Type a message in the chatbox and press Enter or click the send button
-4. The AI will respond and conversation will appear in the chat area
+From the root directory:
+```bash
+npm install
+npm run dev
+```
 
----
-
-## Architecture
-
-- **Frontend:** Vite + React 19 + Tailwind CSS + Socket.IO Client
-- **Backend:** Node.js + Express + Socket.IO + OpenAI API
-- **Real-time Communication:** Socket.IO for bidirectional messaging
-- **AI Integration:** OpenAI GPT-3.5-turbo (configurable to GPT-4)
+This starts backend, frontend, and Electron app together.
 
 ---
 
-## Alternative: Using Google Gemini
+## 🏗️ Architecture
 
-If you prefer to use Google Gemini instead of OpenAI:
-
-1. Uncomment the `getChatResponseGemini` function in `chatBot.js`
-2. Update `server.js` to use `getChatResponseGemini` instead
-3. Add `GEMINI_API_KEY` to your `.env` file
-4. Get API key from: https://makersuite.google.com/app/apikey
+- **Frontend:** React 19 + Vite + Tailwind CSS
+- **Backend:** Node.js + Express + Socket.IO
+- **VM Display:** noVNC + WebSocket Bridge
+- **AI Integration:** Multi-provider vision models
+- **VM Control:** VirtualBox + SSH + xdotool
 
 ---
 
-## Troubleshooting
+## 🤝 Contributing & Future Improvements
+
+This project is **open for contributions**! If you're excited about AI agents, computer vision, or autonomous systems, here's how you can help:
+
+### Areas for Improvement
+
+| Area | Current State | Improvement Needed |
+|------|---------------|-------------------|
+| **Click Accuracy** | ~70-80% | Better coordinate prediction, element detection |
+| **Task Completion** | Simple tasks work well | Complex multi-step workflows need refinement |
+| **Speed** | 12s between AI calls (rate limiting) | Optimize for faster providers or local models |
+| **Error Recovery** | Basic retry logic | Smarter fallback strategies |
+| **Voice Input** | Not implemented | Add speech-to-text for true hands-free control |
+| **Local AI Models** | Cloud-only | Support for Ollama, LLaMA for offline use |
+
+### Ideas for Extension
+
+- 🎤 **Voice Commands**: Integrate Whisper API for speech-to-text
+- 🧠 **Local LLMs**: Add Ollama/LLaMA support for privacy-focused users
+- 📱 **Mobile Companion**: Control your VM from your phone
+- 🕶️ **XR Integration**: Build for smart glasses platforms
+- 🔄 **Task Templates**: Pre-built workflows for common tasks
+- 📊 **Analytics Dashboard**: Track agent performance and success rates
+
+### How to Contribute
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 🐛 Troubleshooting
 
 **Backend not connecting:**
 - Ensure port 3000 is not in use
-- Check if API key is correctly set in `.env`
+- Check if API key is correctly set
 - Verify all dependencies are installed
 
 **Frontend not connecting:**
 - Check console for connection errors
 - Ensure backend is running on port 3000
-- Verify Socket.IO client is installed
+
+**Live View not working:**
+- Verify VM is running (Controls tab shows "running")
+- Check if VNC bridge started (port 6080)
+- Ensure VRDE is enabled on VM (port 5000)
 
 **AI not responding:**
 - Check backend console for errors
 - Verify API key is valid and has credits
 - Check API rate limits
+
+---
+
+## 📜 License
+
+This project is open source in MIT License. Feel free to use, modify, and distribute.
+
+---
+
+## 📬 Contact
+
+If you're working on AI glasses, autonomous agents, or just want to chat about the future of human-computer interaction — I'd love to connect!
+
+**Built with ❤️ by Likhith**
+
+*"The best way to predict the future is to build it."*
+

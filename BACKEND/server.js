@@ -3,13 +3,42 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const multer = require('multer');
 const { getChatResponse, isTask } = require('./chatBot');
 const vmController = require('./vmController');
 const LiveStreamBridge = require('./liveStream');
 const computerUseAgent = require('./computerUseAgent');
 const actionExecutor = require('./actionExecutor');
 const fs = require('fs');
+const fsp = require('fs').promises;
 const path = require('path');
+
+// Setup multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const isImage = file.mimetype.startsWith('image/');
+    const folder = isImage ? 'images' : 'pdfs';
+    const dir = path.join(__dirname, folder);
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}_${file.originalname}`;
+    cb(null, uniqueName);
+  }
+});
+const upload = multer({ 
+  storage,
+  fileFilter: (req, file, cb) => {
+    const isImage = file.mimetype.startsWith('image/');
+    const isPdf = file.mimetype === 'application/pdf';
+    if (isImage || isPdf) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only images and PDFs are allowed'));
+    }
+  }
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -82,6 +111,103 @@ app.get('/api/vm/:name/screenshot', async (req, res) => {
   }
 });
 
+// File upload endpoint for images and PDFs
+app.post('/api/upload', upload.array('files', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ success: false, error: 'No files uploaded' });
+    }
+    
+    const uploadedFiles = req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      type: file.mimetype.startsWith('image/') ? 'image' : 'pdf',
+      path: file.path,
+      size: file.size
+    }));
+    
+    console.log('📁 Files uploaded:', uploadedFiles.map(f => f.originalName).join(', '));
+    
+    // Auto-cleanup for images and pdfs folders
+    await cleanupFolder(path.join(__dirname, 'images'), 100, 50);
+    await cleanupFolder(path.join(__dirname, 'pdfs'), 20, 10);
+    
+    res.json({ success: true, files: uploadedFiles });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Auto-cleanup function: delete oldest files when threshold reached
+async function cleanupFolder(folderPath, threshold, deleteCount) {
+  try {
+    const files = await fsp.readdir(folderPath);
+    
+    if (files.length >= threshold) {
+      console.log(`📁 ${path.basename(folderPath)} folder has ${files.length} files. Cleaning up oldest ${deleteCount}...`);
+      
+      // Get file stats and sort by creation time (oldest first)
+      const fileStats = await Promise.all(
+        files.map(async (file) => {
+          const filePath = path.join(folderPath, file);
+          const stat = await fsp.stat(filePath);
+          return { file, filePath, mtime: stat.mtime.getTime() };
+        })
+      );
+      
+      fileStats.sort((a, b) => a.mtime - b.mtime);
+      
+      // Delete oldest files
+      const filesToDelete = fileStats.slice(0, deleteCount);
+      for (const { file, filePath } of filesToDelete) {
+        await fsp.unlink(filePath);
+        console.log(`🗑️ Deleted old file: ${file}`);
+      }
+      
+      console.log(`✅ Cleaned up ${deleteCount} files from ${path.basename(folderPath)}`);
+    }
+  } catch (error) {
+    console.error(`Cleanup error for ${folderPath}:`, error.message);
+  }
+}
+
+// Get list of uploaded files
+app.get('/api/files', async (req, res) => {
+  try {
+    const imagesDir = path.join(__dirname, 'images');
+    const pdfsDir = path.join(__dirname, 'pdfs');
+    
+    // Ensure directories exist
+    await fsp.mkdir(imagesDir, { recursive: true }).catch(() => {});
+    await fsp.mkdir(pdfsDir, { recursive: true }).catch(() => {});
+    
+    const images = await fsp.readdir(imagesDir).catch(() => []);
+    const pdfs = await fsp.readdir(pdfsDir).catch(() => []);
+    
+    res.json({
+      success: true,
+      images: images.map(f => ({ name: f, path: `images/${f}` })),
+      pdfs: pdfs.map(f => ({ name: f, path: `pdfs/${f}` }))
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete a file
+app.delete('/api/files/:type/:filename', async (req, res) => {
+  try {
+    const { type, filename } = req.params;
+    const folder = type === 'image' ? 'images' : 'pdfs';
+    const filePath = path.join(__dirname, folder, filename);
+    await fsp.unlink(filePath);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
@@ -89,15 +215,17 @@ io.on('connection', (socket) => {
   // Handle incoming chat messages from frontend
   socket.on('chat-message', async (data) => {
     try {
-      const { message, conversationHistory, vmName, aiSettings } = data;
+      const { message, conversationHistory, vmName, aiSettings, attachments } = data;
       
       console.log('Received message:', message);
       if (aiSettings) console.log('Using AI:', aiSettings.provider, aiSettings.model);
+      if (attachments?.length) console.log('📎 Attachments:', attachments.length, '(images:', attachments.filter(a => a.type === 'image').length, ', PDFs:', attachments.filter(a => a.type === 'pdf').length, ')');
       
-      // Send user message back to frontend immediately
+      // Send user message back to frontend immediately (with ALL attachments for display)
       socket.emit('chat-response', {
         role: 'user',
         content: message,
+        attachments: attachments || [],
         timestamp: new Date().toISOString()
       });
 
@@ -105,6 +233,28 @@ io.on('connection', (socket) => {
       const isTaskMessage = isTask(message);
       let screenshotBase64 = null;
       const targetVM = vmName || 'Arch Linux';
+      
+      // Load attached images as base64 for AI context
+      // Load attached IMAGES as base64 for AI context (skip PDFs - for RAG later)
+      let attachedImageBase64 = [];
+      const imageAttachments = attachments?.filter(a => a.type === 'image') || [];
+      if (imageAttachments.length > 0) {
+        for (const img of imageAttachments) {
+          try {
+            const imgPath = path.join(__dirname, img.path);
+            if (fs.existsSync(imgPath)) {
+              const imgBuffer = fs.readFileSync(imgPath);
+              attachedImageBase64.push({
+                name: img.name,
+                base64: imgBuffer.toString('base64')
+              });
+            }
+          } catch (e) {
+            console.error('Error loading attached image:', e.message);
+          }
+        }
+        console.log('📷 Loaded', attachedImageBase64.length, 'images for AI context');
+      }
       
       // Only capture screenshot for tasks, not general chat
       if (isTaskMessage) {
@@ -132,8 +282,9 @@ io.on('connection', (socket) => {
         }
       }
 
-      // Get AI response from chatBot (with optional screenshot for tasks)
-      const aiResponse = await getChatResponse(message, conversationHistory, screenshotBase64, aiSettings);
+      // Get AI response from chatBot (with optional screenshot for tasks, or attached images)
+      const imageForAI = attachedImageBase64.length > 0 ? attachedImageBase64[0].base64 : screenshotBase64;
+      const aiResponse = await getChatResponse(message, conversationHistory, imageForAI, aiSettings);
       
       // Send AI response to frontend (include screenshot for tasks)
       socket.emit('chat-response', {
