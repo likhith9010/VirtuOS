@@ -1,10 +1,99 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 
 function ChatBox({ onSendMessage, disabled = false, onStopAgent = null }) {
   const [message, setMessage] = useState('')
   const [attachedFiles, setAttachedFiles] = useState([])
   const [isUploading, setIsUploading] = useState(false)
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordingTime, setRecordingTime] = useState(0)
+  const [isTranscribing, setIsTranscribing] = useState(false)
   const fileInputRef = useRef(null)
+  const mediaRecorderRef = useRef(null)
+  const audioChunksRef = useRef([])
+  const timerRef = useRef(null)
+
+  // Recording timer
+  useEffect(() => {
+    if (isRecording) {
+      timerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1)
+      }, 1000)
+    } else {
+      if (timerRef.current) {
+        clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+      setRecordingTime(0)
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [isRecording])
+
+  const formatTime = (seconds) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+      audioChunksRef.current = []
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        stream.getTracks().forEach(track => track.stop())
+        await uploadAndTranscribe(audioBlob)
+      }
+
+      mediaRecorder.start()
+      setIsRecording(true)
+    } catch (error) {
+      console.error('Error starting recording:', error)
+      alert('Could not access microphone. Please check permissions.')
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop()
+      setIsRecording(false)
+    }
+  }
+
+  const uploadAndTranscribe = async (audioBlob) => {
+    setIsTranscribing(true)
+    try {
+      const formData = new FormData()
+      formData.append('audio', audioBlob, `recording_${Date.now()}.webm`)
+
+      const response = await fetch('http://localhost:3000/api/transcribe', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+      if (data.success && data.transcript) {
+        setMessage(prev => prev + (prev ? ' ' : '') + data.transcript)
+      } else {
+        console.error('Transcription failed:', data.error)
+        alert('Transcription failed: ' + (data.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('Transcription error:', error)
+      alert('Failed to transcribe audio')
+    }
+    setIsTranscribing(false)
+  }
 
   const handleFileSelect = async (e) => {
     const files = Array.from(e.target.files)
@@ -144,14 +233,47 @@ function ChatBox({ onSendMessage, disabled = false, onStopAgent = null }) {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              disabled={disabled}
-              placeholder={disabled ? "Agent is working..." : "Ask VirtuOS to do something..."}
-              className="flex-1 outline-none text-sm text-gray-700 placeholder-gray-400 focus:placeholder-gray-500 transition-colors bg-transparent disabled:cursor-not-allowed"
+              disabled={disabled || isRecording}
+              placeholder={
+                isRecording 
+                  ? `🎙️ Recording... ${formatTime(recordingTime)}` 
+                  : isTranscribing 
+                    ? '⏳ Transcribing...' 
+                    : disabled 
+                      ? "Agent is working..." 
+                      : "Ask VirtuOS to do something..."
+              }
+              className={`flex-1 outline-none text-sm placeholder-gray-400 focus:placeholder-gray-500 transition-colors bg-transparent disabled:cursor-not-allowed ${
+                isRecording ? 'text-red-500 placeholder-red-400' : 'text-gray-700'
+              }`}
             />
-            <button type="button" disabled={disabled} className="text-gray-400 hover:text-orange-500 hover:bg-orange-50 p-1 rounded transition-colors disabled:opacity-50">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
+            {/* Microphone button */}
+            <button 
+              type="button" 
+              disabled={disabled || isTranscribing} 
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`p-1 rounded transition-colors ${
+                isRecording 
+                  ? 'text-red-500 bg-red-50 animate-pulse' 
+                  : isTranscribing
+                    ? 'text-orange-500 animate-spin'
+                    : 'text-gray-400 hover:text-orange-500 hover:bg-orange-50'
+              } disabled:opacity-50`}
+              title={isRecording ? 'Stop recording' : 'Start voice input'}
+            >
+              {isTranscribing ? (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              ) : isRecording ? (
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="2" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              )}
             </button>
             
             {/* Send or Stop button */}
@@ -169,7 +291,7 @@ function ChatBox({ onSendMessage, disabled = false, onStopAgent = null }) {
             ) : (
               <button 
                 type="submit" 
-                disabled={!message.trim()}
+                disabled={!message.trim() || isRecording || isTranscribing}
                 className="text-orange-300 hover:text-orange-500 hover:bg-orange-50 p-1 rounded transition-all transform hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-4 h-4 rotate-45" fill="currentColor" viewBox="0 0 20 20">

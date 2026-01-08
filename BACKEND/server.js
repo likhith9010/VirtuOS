@@ -4,6 +4,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const multer = require('multer');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 const { getChatResponse, isTask } = require('./chatBot');
 const vmController = require('./vmController');
 const LiveStreamBridge = require('./liveStream');
@@ -39,6 +42,20 @@ const upload = multer({
     }
   }
 });
+
+// Setup multer for voice recordings
+const voiceStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, 'voice');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}_${file.originalname}`;
+    cb(null, uniqueName);
+  }
+});
+const voiceUpload = multer({ storage: voiceStorage });
 
 const app = express();
 const server = http.createServer(app);
@@ -171,6 +188,59 @@ async function cleanupFolder(folderPath, threshold, deleteCount) {
     console.error(`Cleanup error for ${folderPath}:`, error.message);
   }
 }
+
+// Voice transcription endpoint using Whisper
+app.post('/api/transcribe', voiceUpload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No audio file uploaded' });
+    }
+
+    const audioPath = req.file.path;
+    const transcriptDir = path.join(__dirname, 'transcript');
+    await fsp.mkdir(transcriptDir, { recursive: true });
+    
+    const transcriptFile = path.join(transcriptDir, `${Date.now()}_transcript.txt`);
+    
+    console.log('🎙️ Processing voice recording:', req.file.filename);
+    
+    // Run Whisper transcription
+    // Using Python's whisper module
+    const whisperCommand = `python -m whisper "${audioPath}" --model tiny --output_format txt --output_dir "${transcriptDir}" --language en`;
+    
+    try {
+      const { stdout, stderr } = await execPromise(whisperCommand, { timeout: 60000 });
+      console.log('Whisper output:', stdout);
+      
+      // Whisper outputs to a file with same name as input but .txt extension
+      const outputFileName = path.basename(audioPath).replace(/\.[^.]+$/, '.txt');
+      const outputPath = path.join(transcriptDir, outputFileName);
+      
+      // Read the transcript
+      let transcript = '';
+      if (fs.existsSync(outputPath)) {
+        transcript = await fsp.readFile(outputPath, 'utf-8');
+        transcript = transcript.trim();
+        console.log('📝 Transcript:', transcript);
+      }
+      
+      // Cleanup voice folder (keep last 10 after reaching 20)
+      await cleanupFolder(path.join(__dirname, 'voice'), 20, 10);
+      // Cleanup transcript folder (keep last 50 after reaching 100)
+      await cleanupFolder(transcriptDir, 100, 50);
+      
+      res.json({ success: true, transcript });
+      
+    } catch (whisperError) {
+      console.error('Whisper error:', whisperError.message);
+      res.status(500).json({ success: false, error: 'Transcription failed: ' + whisperError.message });
+    }
+    
+  } catch (error) {
+    console.error('Transcription endpoint error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 // Get list of uploaded files
 app.get('/api/files', async (req, res) => {

@@ -131,7 +131,10 @@ This project is **open for contributions**! If you're excited about AI agents, c
 
 ### Ideas for Extension
 
-- 🎤 **Voice Commands**: Integrate Whisper API for speech-to-text
+**MAIN FEATURE STILL REMAIN UNBUILT**
+USING SQL/NOSQL DATABASES TO STORE MESSAGES , REPLIES , CHAT NAMES ..ETC WHICH STILL USE LOCAL STORAGE.
+
+-    **RAG functionality**: implement RAG Functionality for pdf to used as reference.
 - 🧠 **Local LLMs**: Add Ollama/LLaMA support for privacy-focused users
 - 📱 **Mobile Companion**: Control your VM from your phone
 - 🕶️ **XR Integration**: Build for smart glasses platforms
