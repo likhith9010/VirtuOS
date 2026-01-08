@@ -2,11 +2,56 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-// Using Google Gemini API (supports vision)
-// gemini-2.5-flash works but has 5 RPM limit on free tier - wait between iterations
-const API_KEY = process.env.GEMINI_API_KEY || 'your-api-key-here';
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}`;
+// Using Google Gemini API (supports vision) - Default configuration
+// These are used if no settings are passed from frontend
+const DEFAULT_API_KEY = process.env.GEMINI_API_KEY || 'your-api-key-here';
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const DEFAULT_PROVIDER = 'google';
+
+// API URL builders for different providers
+function getApiConfig(aiSettings) {
+  const provider = aiSettings?.provider || DEFAULT_PROVIDER;
+  const model = aiSettings?.model || DEFAULT_MODEL;
+  const apiKey = aiSettings?.apiKey || DEFAULT_API_KEY;
+  
+  switch (provider) {
+    case 'google':
+      return {
+        provider,
+        model,
+        apiKey,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+      };
+    case 'openai':
+      return {
+        provider,
+        model,
+        apiKey,
+        url: 'https://api.openai.com/v1/chat/completions'
+      };
+    case 'anthropic':
+      return {
+        provider,
+        model,
+        apiKey,
+        url: 'https://api.anthropic.com/v1/messages'
+      };
+    case 'xai':
+      return {
+        provider,
+        model,
+        apiKey,
+        url: 'https://api.x.ai/v1/chat/completions'
+      };
+    default:
+      return {
+        provider: 'google',
+        model: DEFAULT_MODEL,
+        apiKey: DEFAULT_API_KEY,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${DEFAULT_MODEL}:generateContent?key=${DEFAULT_API_KEY}`
+      };
+  }
+}
 
 /**
  * Detect if message is a task (action command) vs question
@@ -23,8 +68,9 @@ module.exports.isTask = isTask;
 /**
  * COMPUTER USE: Get next action(s) from AI based on screen state
  * Returns structured JSON actions that can be executed on the VM
+ * @param {Object} aiSettings - Optional AI provider settings { provider, model, apiKey }
  */
-async function getComputerUseAction(task, screenshotBase64, context = {}) {
+async function getComputerUseAction(task, screenshotBase64, context = {}, aiSettings = null) {
   const { 
     previousActions = [], 
     actionHistory = [],
@@ -33,6 +79,9 @@ async function getComputerUseAction(task, screenshotBase64, context = {}) {
     screenUnchanged = false,
     sameScreenCount = 0
   } = context;
+  
+  // Get API configuration based on settings
+  const apiConfig = getApiConfig(aiSettings);
   
   // Build action history string with success/failure info
   let historyStr = 'None';
@@ -55,20 +104,21 @@ async function getComputerUseAction(task, screenshotBase64, context = {}) {
 
   const systemPrompt = `You are a Computer Use AI agent controlling a Linux desktop (Arch Linux with KDE). Analyze the screenshot and decide the NEXT ACTION.
 
-SCREEN LAYOUT (1920x1080 pixels):
+SCREEN LAYOUT (1280x800 pixels):
 ┌─────────────────────────────────────────────────────────────────┐
-│ Desktop Area (0,0) to (1920,700)                                │
+│ Desktop Area (0,0) to (1280,700)                                │
 │  - Icons on LEFT edge: x=40-60, y starts at ~50                 │
 │  - First icon: ~(46, 55), Second: ~(46, 165), spacing ~110px    │
 ├─────────────────────────────────────────────────────────────────┤
-│ Browser/App Windows typically:                                   │
-│  - URL bar: y ≈ 60-80 from window top                           │
-│  - Search boxes: Look for white input fields                    │
-│  - YouTube search: Around (600, 60) when YT is open             │
+│ Browser/App Windows (when maximized):                            │
+│  - Window fills most of screen (0,0) to (1280,752)              │
+│  - URL/Search bar: y ≈ 50-70 from top                           │
+│  - YouTube search box: ~(640, 52) center-top                    │
+│  - Google search box: ~(640, 370) center of page                │
 ├─────────────────────────────────────────────────────────────────┤
-│ TASKBAR (bottom): y = 740 (not 1080!)                           │
-│  - App Menu: x≈30  | Show Desktop: x≈78  | VLC: x≈128           │
-│  - Settings: x≈178 | Files: x≈228       | Terminal: x≈278      │
+│ TASKBAR (bottom): y = 752                                       │
+│  - App Menu: x≈26  | Desktop: x≈68  | VLC: x≈112               │
+│  - Settings: x≈156 | Files: x≈200   | Terminal: x≈244          │
 └─────────────────────────────────────────────────────────────────┘
 
 RESPOND WITH ONLY THIS JSON FORMAT (nothing else):
@@ -84,13 +134,13 @@ ACTION TYPES:
 - done: {"type": "done", "message": "Task completed because..."}
 - error: {"type": "error", "message": "Cannot complete because..."}
 
-COMMON UI ELEMENT LOCATIONS:
-- YouTube logo (when open): ~(115, 60)
-- YouTube search box: ~(640, 60) - click then type
-- Google search box: ~(960, 500) on homepage
-- Browser URL bar: ~(400-600, 65) depending on browser
-- Window close (X): Top-right corner of window, ~(1890, 15)
-- Window maximize: ~(1855, 15)
+COMMON UI ELEMENT LOCATIONS (1280x800):
+- YouTube logo (when open): ~(100, 52)
+- YouTube search box: ~(640, 52) - click then type, CENTERED horizontally
+- Google search box: ~(640, 370) - center of page
+- Browser URL bar: ~(400, 52) 
+- Window close (X): ~(1255, 12)
+- Window maximize: ~(1225, 12)
 
 IMPORTANT RULES:
 1. ONE action per response
@@ -113,34 +163,119 @@ Analyze the current screenshot and provide the next action. If the task appears 
 OUTPUT ONLY VALID JSON:`;
 
   try {
-    const response = await axios.post(
-      API_URL,
-      {
-        contents: [{
-          parts: [
-            { text: systemPrompt },
-            {
-              inline_data: {
-                mime_type: "image/png",
-                data: screenshotBase64
+    let aiResponse;
+    
+    // Make API call based on provider
+    if (apiConfig.provider === 'google') {
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          contents: [{
+            parts: [
+              { text: systemPrompt },
+              {
+                inline_data: {
+                  mime_type: "image/png",
+                  data: screenshotBase64
+                }
               }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 300,
+            topP: 0.8,
+            responseMimeType: "application/json"
+          }
+        },
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      aiResponse = response.data.candidates[0].content.parts[0].text;
+      
+    } else if (apiConfig.provider === 'openai') {
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          model: apiConfig.model,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: systemPrompt },
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } }
+              ]
+            }
+          ],
+          max_tokens: 300,
+          temperature: 0.2,
+          response_format: { type: 'json_object' }
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiConfig.apiKey}`
+          }
+        }
+      );
+      aiResponse = response.data.choices[0].message.content;
+      
+    } else if (apiConfig.provider === 'anthropic') {
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          model: apiConfig.model,
+          max_tokens: 300,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: systemPrompt },
+                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: screenshotBase64 } }
+              ]
             }
           ]
-        }],
-        generationConfig: {
-          temperature: 0.2,  // Even lower for consistent JSON
-          maxOutputTokens: 300,
-          topP: 0.8,
-          responseMimeType: "application/json"  // Force JSON output
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiConfig.apiKey,
+            'anthropic-version': '2023-06-01'
+          }
         }
-      },
-      {
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-
-    const aiResponse = response.data.candidates[0].content.parts[0].text;
-    console.log('🤖 AI Response:', aiResponse);
+      );
+      aiResponse = response.data.content[0].text;
+      
+    } else if (apiConfig.provider === 'xai') {
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          model: apiConfig.model,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: systemPrompt },
+                { type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } }
+              ]
+            }
+          ],
+          max_tokens: 300,
+          temperature: 0.2
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiConfig.apiKey}`
+          }
+        }
+      );
+      aiResponse = response.data.choices[0].message.content;
+      
+    } else {
+      throw new Error(`Unsupported provider: ${apiConfig.provider}`);
+    }
+    
+    console.log(`🤖 [${apiConfig.provider}/${apiConfig.model}] Response:`, aiResponse);
 
     // Parse JSON from response
     let jsonStr = aiResponse.trim();
@@ -225,13 +360,17 @@ function generateActionSteps(message) {
 }
 
 /**
- * Get chat response from Google Gemini 2.0 Flash with Vision
+ * Get chat response from AI with Vision
  * @param {string} userMessage - The message from the user
  * @param {Array} conversationHistory - Previous conversation messages
  * @param {string} screenshotBase64 - Optional base64 encoded screenshot of VM screen
+ * @param {Object} aiSettings - Optional AI provider settings { provider, model, apiKey }
  * @returns {Promise<Object>} - AI response with type and optional actions
  */
-async function getChatResponse(userMessage, conversationHistory = [], screenshotBase64 = null) {
+async function getChatResponse(userMessage, conversationHistory = [], screenshotBase64 = null, aiSettings = null) {
+  // Get API configuration based on settings
+  const apiConfig = getApiConfig(aiSettings);
+  
   try {
     // Build conversation context from history
     let conversationContext = '';
@@ -263,43 +402,110 @@ Be helpful, concise, and friendly. When explaining computer actions, be clear an
 ${conversationContext}User: ${userMessage}
 Assistant:`;
 
-    // Build the request parts (text + optional image)
-    const parts = [{ text: systemPrompt }];
+    let aiResponse;
     
-    // Add screenshot if provided
-    if (screenshotBase64) {
-      parts.push({
-        inline_data: {
-          mime_type: "image/png",
-          data: screenshotBase64
-        }
-      });
-      console.log('📸 Sending screenshot to Gemini for vision analysis');
-    }
-
-    // Make API call to Gemini
-    const response = await axios.post(
-      API_URL,
-      {
-        contents: [{
-          parts: parts
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 500,
-          topP: 0.95,
-          topK: 40
-        }
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
+    // Make API call based on provider
+    if (apiConfig.provider === 'google') {
+      // Build the request parts (text + optional image)
+      const parts = [{ text: systemPrompt }];
+      if (screenshotBase64) {
+        parts.push({
+          inline_data: {
+            mime_type: "image/png",
+            data: screenshotBase64
+          }
+        });
       }
-    );
-
-    // Extract and return the AI response
-    const aiResponse = response.data.candidates[0].content.parts[0].text;
+      
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          contents: [{ parts }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 500,
+            topP: 0.95,
+            topK: 40
+          }
+        },
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      aiResponse = response.data.candidates[0].content.parts[0].text;
+      
+    } else if (apiConfig.provider === 'openai') {
+      const content = [{ type: 'text', text: systemPrompt }];
+      if (screenshotBase64) {
+        content.push({ type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } });
+      }
+      
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          model: apiConfig.model,
+          messages: [{ role: 'user', content }],
+          max_tokens: 500,
+          temperature: 0.7
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiConfig.apiKey}`
+          }
+        }
+      );
+      aiResponse = response.data.choices[0].message.content;
+      
+    } else if (apiConfig.provider === 'anthropic') {
+      const content = [{ type: 'text', text: systemPrompt }];
+      if (screenshotBase64) {
+        content.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: screenshotBase64 } });
+      }
+      
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          model: apiConfig.model,
+          max_tokens: 500,
+          messages: [{ role: 'user', content }]
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiConfig.apiKey,
+            'anthropic-version': '2023-06-01'
+          }
+        }
+      );
+      aiResponse = response.data.content[0].text;
+      
+    } else if (apiConfig.provider === 'xai') {
+      const content = [{ type: 'text', text: systemPrompt }];
+      if (screenshotBase64) {
+        content.push({ type: 'image_url', image_url: { url: `data:image/png;base64,${screenshotBase64}` } });
+      }
+      
+      const response = await axios.post(
+        apiConfig.url,
+        {
+          model: apiConfig.model,
+          messages: [{ role: 'user', content }],
+          max_tokens: 500,
+          temperature: 0.7
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiConfig.apiKey}`
+          }
+        }
+      );
+      aiResponse = response.data.choices[0].message.content;
+      
+    } else {
+      throw new Error(`Unsupported provider: ${apiConfig.provider}`);
+    }
+    
+    console.log(`📨 [${apiConfig.provider}/${apiConfig.model}] Chat response received`);
     
     // Return structured response
     if (isTaskMessage) {

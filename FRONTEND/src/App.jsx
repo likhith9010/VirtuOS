@@ -4,6 +4,8 @@ import Navbar from './components/Navbar'
 import ChatArea from './components/ChatArea'
 import ChatBox from './components/ChatBox'
 import ScreenshotsPanel from './components/ScreenshotsPanel'
+import ProfilePage from './components/ProfilePage'
+import SettingsPage from './components/SettingsPage'
 import { useState, useEffect } from 'react'
 import { io } from 'socket.io-client'
 
@@ -12,6 +14,14 @@ function App() {
   const [socket, setSocket] = useState(null)
   const [isConnected, setIsConnected] = useState(false)
   const [isThinking, setIsThinking] = useState(false)
+  
+  // Profile state
+  const [showProfile, setShowProfile] = useState(false)
+  const [profile, setProfile] = useState(null)
+  
+  // Settings state
+  const [showSettings, setShowSettings] = useState(false)
+  const [settings, setSettings] = useState(null)
   
   // Computer Use state
   const [computerUseActive, setComputerUseActive] = useState(false)
@@ -23,6 +33,33 @@ function App() {
   const [activeChat, setActiveChat] = useState(null)
   const [showExitModal, setShowExitModal] = useState(false)
   const [pendingChatSwitch, setPendingChatSwitch] = useState(null)
+
+  // Load profile from localStorage on mount
+  useEffect(() => {
+    const savedProfile = localStorage.getItem('virtuos-profile')
+    if (savedProfile) {
+      setProfile(JSON.parse(savedProfile))
+    }
+    
+    const savedSettings = localStorage.getItem('virtuos-settings')
+    if (savedSettings) {
+      setSettings(JSON.parse(savedSettings))
+    }
+  }, [])
+
+  // Save profile to localStorage
+  const handleSaveProfile = (newProfile) => {
+    setProfile(newProfile)
+    localStorage.setItem('virtuos-profile', JSON.stringify(newProfile))
+    setShowProfile(false)
+  }
+
+  // Save settings to localStorage
+  const handleSaveSettings = (newSettings) => {
+    setSettings(newSettings)
+    localStorage.setItem('virtuos-settings', JSON.stringify(newSettings))
+    setShowSettings(false)
+  }
 
   // Load chats from localStorage on mount
   useEffect(() => {
@@ -281,15 +318,27 @@ function App() {
           return chat
         }))
         
-        // Start Computer Use agent
-        socket.emit('computer-use', { task: message })
+        // Start Computer Use agent (include AI settings)
+        socket.emit('computer-use', { 
+          task: message,
+          aiSettings: settings ? {
+            provider: settings.provider,
+            model: settings.model,
+            apiKey: settings.apiKeys?.[settings.provider]
+          } : null
+        })
       } else {
         // Regular chat message
         const currentChat = chats.find(chat => chat.id === activeChat)
         
         socket.emit('chat-message', {
           message: message,
-          conversationHistory: currentChat?.messages.filter(msg => msg.role !== 'system') || []
+          conversationHistory: currentChat?.messages.filter(msg => msg.role !== 'system') || [],
+          aiSettings: settings ? {
+            provider: settings.provider,
+            model: settings.model,
+            apiKey: settings.apiKeys?.[settings.provider]
+          } : null
         })
       }
     }
@@ -364,6 +413,7 @@ function App() {
         onNewChat={handleNewChat}
         onSwitchChat={handleSwitchChat}
         onDeleteChat={handleDeleteChat}
+        onSettingsClick={() => setShowSettings(true)}
       />
 
       {/* Exit Confirmation Modal */}
@@ -405,8 +455,30 @@ function App() {
             </div>
           )}
           <div className="flex-1"></div>
-          <Navbar />
+          <Navbar 
+            profile={profile} 
+            onProfileClick={() => setShowProfile(true)} 
+            onUpgrade={() => setShowProfile(true)}
+          />
         </div>
+
+        {/* Profile Modal */}
+        {showProfile && (
+          <ProfilePage 
+            initialProfile={profile}
+            onClose={() => setShowProfile(false)}
+            onSave={handleSaveProfile}
+          />
+        )}
+
+        {/* Settings Modal */}
+        {showSettings && (
+          <SettingsPage 
+            initialSettings={settings}
+            onClose={() => setShowSettings(false)}
+            onSave={handleSaveSettings}
+          />
+        )}
 
         {/* Content Below Navbar */}
         <div className="flex-1 flex overflow-hidden">

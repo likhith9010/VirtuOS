@@ -56,7 +56,7 @@ function ChatBox({ onSendMessage, disabled = false, onStopAgent = null }) {
               <button 
                 type="button"
                 onClick={handleStop}
-                className="bg-red-500 hover:bg-red-600 text-white p-2 rounded-lg transition-all transform hover:scale-105"
+                className="bg-orange-300 hover:bg-orange-500 text-white p-2 rounded-lg transition-all transform hover:scale-105"
                 title="Stop agent"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

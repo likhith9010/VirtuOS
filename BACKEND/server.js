@@ -89,9 +89,10 @@ io.on('connection', (socket) => {
   // Handle incoming chat messages from frontend
   socket.on('chat-message', async (data) => {
     try {
-      const { message, conversationHistory, vmName } = data;
+      const { message, conversationHistory, vmName, aiSettings } = data;
       
       console.log('Received message:', message);
+      if (aiSettings) console.log('Using AI:', aiSettings.provider, aiSettings.model);
       
       // Send user message back to frontend immediately
       socket.emit('chat-response', {
@@ -132,7 +133,7 @@ io.on('connection', (socket) => {
       }
 
       // Get AI response from chatBot (with optional screenshot for tasks)
-      const aiResponse = await getChatResponse(message, conversationHistory, screenshotBase64);
+      const aiResponse = await getChatResponse(message, conversationHistory, screenshotBase64, aiSettings);
       
       // Send AI response to frontend (include screenshot for tasks)
       socket.emit('chat-response', {
@@ -156,10 +157,11 @@ io.on('connection', (socket) => {
   // Handle Computer Use request - starts autonomous agent loop
   socket.on('computer-use', async (data) => {
     try {
-      const { task, vmName } = data;
+      const { task, vmName, aiSettings } = data;
       const targetVM = vmName || 'Arch Linux';
       
       console.log('🖥️ Starting Computer Use for task:', task);
+      if (aiSettings) console.log('Using AI:', aiSettings.provider, aiSettings.model);
       
       // Check VM status first
       const status = await vmController.getVMStatus(targetVM);
@@ -174,7 +176,7 @@ io.on('connection', (socket) => {
       // Run the computer use agent with real-time updates
       const result = await computerUseAgent.runComputerUseAgent(task, (event, eventData) => {
         socket.emit(event, eventData);
-      });
+      }, aiSettings);
       
       // Send final result
       socket.emit('computer-use-complete', result);

@@ -14,19 +14,20 @@ const MAX_ITERATIONS = 10;
 const SCREENSHOT_DELAY = 2000; // ms to wait after action before screenshot (increased for UI to settle)
 const API_DELAY = 12000; // Rate limit delay (5 RPM = 12s between requests)
 
-// Screen dimensions and grid config
-const SCREEN_WIDTH = 1920;
-const SCREEN_HEIGHT = 1080;
-const GRID_COLS = 12;  // A-L columns
-const GRID_ROWS = 8;   // 1-8 rows
+// Screen dimensions and grid config (1280x800 resolution)
+const SCREEN_WIDTH = 1280;
+const SCREEN_HEIGHT = 800;
+const TASKBAR_Y = 752; // 800 - 48 (panel height)
+const GRID_COLS = 8;   // A-H columns
+const GRID_ROWS = 6;   // 1-6 rows
 
 /**
  * Known app locations for quick actions (hardcoded for demo)
  * These are pre-mapped locations for common tasks
- * Based on 1920x1080 Arch Linux KDE desktop
+ * Based on 1280x800 Arch Linux KDE desktop
  */
 const KNOWN_LOCATIONS = {
-  // Desktop Icons (top-left area)
+  // Desktop Icons (top-left area) - same x, similar y
   'vlc': { x: 46, y: 55, action: 'click', description: 'VLC media player desktop icon' },
   'vlc media player': { x: 46, y: 55, action: 'click', description: 'VLC media player desktop icon' },
   'media player': { x: 46, y: 55, action: 'click', description: 'VLC media player desktop icon' },
@@ -35,19 +36,19 @@ const KNOWN_LOCATIONS = {
   'zen': { x: 46, y: 165, action: 'click', description: 'Zen Browser desktop icon' },
   'browser': { x: 46, y: 165, action: 'click', description: 'Zen Browser desktop icon' },
   
-  // Taskbar Icons (bottom panel, y ≈ 740)
-  'app menu': { x: 30, y: 740, action: 'click', description: 'App menu in taskbar' },
-  'menu': { x: 30, y: 740, action: 'click', description: 'App menu in taskbar' },
-  'start': { x: 30, y: 740, action: 'click', description: 'App menu in taskbar' },
-  'show desktop': { x: 78, y: 740, action: 'click', description: 'Show desktop in taskbar' },
-  'vlc taskbar': { x: 128, y: 740, action: 'click', description: 'VLC in taskbar' },
-  'settings': { x: 178, y: 740, action: 'click', description: 'Settings in taskbar' },
-  'file manager': { x: 228, y: 740, action: 'click', description: 'File manager (Dolphin) in taskbar' },
-  'files': { x: 228, y: 740, action: 'click', description: 'File manager (Dolphin) in taskbar' },
-  'dolphin': { x: 228, y: 740, action: 'click', description: 'Dolphin file manager in taskbar' },
-  'terminal': { x: 278, y: 740, action: 'click', description: 'Terminal (Konsole) in taskbar' },
-  'konsole': { x: 278, y: 740, action: 'click', description: 'Konsole terminal in taskbar' },
-  'console': { x: 278, y: 740, action: 'click', description: 'Terminal in taskbar' },
+  // Taskbar Icons (bottom panel, y = 752 for 800px height)
+  'app menu': { x: 26, y: 752, action: 'click', description: 'App menu in taskbar' },
+  'menu': { x: 26, y: 752, action: 'click', description: 'App menu in taskbar' },
+  'start': { x: 26, y: 752, action: 'click', description: 'App menu in taskbar' },
+  'show desktop': { x: 68, y: 752, action: 'click', description: 'Show desktop in taskbar' },
+  'vlc taskbar': { x: 112, y: 752, action: 'click', description: 'VLC in taskbar' },
+  'settings': { x: 156, y: 752, action: 'click', description: 'Settings in taskbar' },
+  'file manager': { x: 200, y: 752, action: 'click', description: 'File manager (Dolphin) in taskbar' },
+  'files': { x: 200, y: 752, action: 'click', description: 'File manager (Dolphin) in taskbar' },
+  'dolphin': { x: 200, y: 752, action: 'click', description: 'Dolphin file manager in taskbar' },
+  'terminal': { x: 244, y: 752, action: 'click', description: 'Terminal (Konsole) in taskbar' },
+  'konsole': { x: 244, y: 752, action: 'click', description: 'Konsole terminal in taskbar' },
+  'console': { x: 244, y: 752, action: 'click', description: 'Terminal in taskbar' },
 };
 
 /**
@@ -172,9 +173,10 @@ function isSimpleTask(task) {
  * Run the Computer Use agent loop
  * @param {string} task - The user's task description
  * @param {Function} onUpdate - Callback for progress updates (io.emit)
+ * @param {Object} aiSettings - Optional AI provider settings { provider, model, apiKey }
  * @returns {Object} Final result
  */
-async function runComputerUseAgent(task, onUpdate = null) {
+async function runComputerUseAgent(task, onUpdate = null, aiSettings = null) {
   resetStopFlag(); // Reset stop flag at start
   const history = [];
   let iteration = 0;
@@ -421,7 +423,7 @@ async function runComputerUseAgent(task, onUpdate = null) {
         maxAttempts: MAX_ITERATIONS,
         screenUnchanged: sameScreenCount > 0,
         sameScreenCount: sameScreenCount
-      });
+      }, aiSettings);
 
       if (!aiResult.success) {
         emit('agent_error', { message: `AI failed: ${aiResult.error}` });
