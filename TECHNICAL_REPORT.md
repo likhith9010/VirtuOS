@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**VirtuOS** is a Computer Use Agent system inspired by Anthropic's Computer Use demo. The goal is to create an Electron desktop application that provides real-time interactive control of a VirtualBox VM (Arch Linux), enabling AI agents to control the VM through visual feedback and input simulation (mouse/keyboard).
+**VirtuOS** is a Computer Use Agent system inspired by Anthropic's Computer Use demo and GPT Agent mode. The goal is to create an Electron desktop application that provides real-time interactive control of a VirtualBox VM (Arch Linux), enabling AI agents to control the VM through visual feedback and input simulation (mouse/keyboard).
 
 ### Tech Stack
 - **Frontend**: React 19 + Vite + Tailwind CSS (port 5173)

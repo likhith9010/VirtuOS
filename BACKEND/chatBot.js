@@ -98,28 +98,51 @@ async function getComputerUseAction(task, screenshotBase64, context = {}, aiSett
 ⚠️ WARNING: The screen has NOT changed after ${sameScreenCount} action(s). This means:
 - The previous click/action may have missed the target
 - You should try a DIFFERENT coordinate or approach
+- After a failed click look at mouse position and UI to decide next click example: if the mouse is near the slightly left and little down from the target, adujst your next click coordinates to be slightly right and up.
 - DO NOT repeat the exact same action - it won't work!
 - Consider: Is the element clickable? Is there a loading state? Try a different location.`;
   }
 
   const systemPrompt = `You are a Computer Use AI agent controlling a Linux desktop (Arch Linux with KDE). Analyze the screenshot and decide the NEXT ACTION.
 
-SCREEN LAYOUT (1280x800 pixels):
-┌─────────────────────────────────────────────────────────────────┐
-│ Desktop Area (0,0) to (1280,700)                                │
-│  - Icons on LEFT edge: x=40-60, y starts at ~50                 │
-│  - First icon: ~(46, 55), Second: ~(46, 165), spacing ~110px    │
-├─────────────────────────────────────────────────────────────────┤
-│ Browser/App Windows (when maximized):                            │
-│  - Window fills most of screen (0,0) to (1280,752)              │
-│  - URL/Search bar: y ≈ 50-70 from top                           │
-│  - YouTube search box: ~(640, 52) center-top                    │
-│  - Google search box: ~(640, 370) center of page                │
-├─────────────────────────────────────────────────────────────────┤
-│ TASKBAR (bottom): y = 752                                       │
-│  - App Menu: x≈26  | Desktop: x≈68  | VLC: x≈112               │
-│  - Settings: x≈156 | Files: x≈200   | Terminal: x≈244          │
-└─────────────────────────────────────────────────────────────────┘
+SCREEN LAYOUT & COMMON LOCATIONS (1280x800):
+┌───────────────────────────────────────────────────────────────────────┐
+│ DESKTOP AREA (0,0) to (1280, 750)                                     │
+│  - Left Icon Column (Center x ≈ 46):                                  │
+│    • First Icon: (46, 55)                                             │
+│    • Second Icon: (46, 165)  (Vertical spacing ≈ 110px)               │
+│                                                                       │
+│ BROWSER / MAXIMIZED APP WINDOWS (0,0) to (1280, 750)                  │
+│  - Top Bar Area (y ≈ 0-70):                                           │
+│    • Window Controls (Right edge): Close(1255,12), Maximize(1225,12)  │
+│    • URL/Address Bar: (400, 52)                                       │
+│    • YouTube Search Box: (640, 52) (Centered horizontally at top)     │
+│  - Main Content Area:                                                 │
+│    • Google Search Box: (640, 370) (Centered in middle of page)       │
+├───────────────────────────────────────────────────────────────────────┤
+│ TASKBAR (Bottom band, y from 750 to 800)                              │
+│  - App Icons (Left to Right, Center y ≈ 775):                         │
+│    • App Menu: (26, 775)    | • Desktop: (68, 775) | • VLC: (112, 775)│
+│    • Settings: (156, 775)   | • Files: (200, 775)  | • Term: (244, 775) │
+│  - System Tray & Clock (Right side): (Start x ≈ 1150, y ≈ 775)        │
+└───────────────────────────────────────────────────────────────────────┘
+
+SCREEN GRID REFERENCE (4x4 division for spatial context & initial clicks):
+(Coordinates given are the CENTER of each sector)
+┌───────────────────┬───────────────────┬───────────────────┬───────────────────┐
+│ Sector 1,1 (TL)   │ Sector 2,1 (TC-L) │ Sector 3,1 (TC-R) │ Sector 4,1 (TR)   │
+│ Center: (160, 100)│ Center: (480, 100)│ Center: (800, 100)│ Center: (1120, 100)│
+├───────────────────┼───────────────────┼───────────────────┼───────────────────┤
+│ Sector 1,2 (MTL)  │ Sector 2,2 (MTC-L)│ Sector 3,2 (MTC-R)│ Sector 4,2 (MTR)  │
+│ Center: (160, 300)│ Center: (480, 300)│ Center: (800, 300)│ Center: (1120, 300)│
+├───────────────────┼───────────────────┼───────────────────┼───────────────────┤
+│ Sector 1,3 (MBL)  │ Sector 2,3 (MBC-L)│ Sector 3,3 (MBC-R)│ Sector 4,3 (MBR)  │
+│ Center: (160, 500)│ Center: (480, 500)│ Center: (800, 500)│ Center: (1120, 500)│
+├───────────────────┼───────────────────┼───────────────────┼───────────────────┤
+│ Sector 1,4 (BL)   │ Sector 2,4 (BC-L) │ Sector 3,4 (BC-R) │ Sector 4,4 (BR)   │
+│ Center: (160, 700)│ Center: (480, 700)│ Center: (800, 700)│ Center: (1120, 700)│
+└───────────────────┴───────────────────┴───────────────────┴───────────────────┘
+TL=Top-Left, TC=Top-Center, TR=Top-Right, M=Mid, B=Bottom, L=Left, R=Right
 
 RESPOND WITH ONLY THIS JSON FORMAT (nothing else):
 {"thinking": "I see [describe UI elements]. I will click [target] at approximately (x, y)", "action": {"type": "click", "x": 100, "y": 200}}

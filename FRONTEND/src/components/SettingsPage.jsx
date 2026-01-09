@@ -14,7 +14,7 @@ const AI_PROVIDERS = [
     ),
     models: [
       { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast & efficient' },
-      { id: 'gemini-3.0-flash', name: 'Gemini 3.0 Flash', description: 'Latest & fastest' },
+      { id: 'gemini-3-flash', name: 'Gemini 3 Flash', description: 'Latest & fastest' },
       { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Best for complex tasks' },
     ],
     color: 'blue'
@@ -29,7 +29,7 @@ const AI_PROVIDERS = [
     ),
     models: [
       { id: 'gpt-4o', name: 'GPT-4o', description: 'Most capable' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Fast & affordable' },
+      { id: 'gpt-5-mini', name: 'gpt-5-mini', description: 'Fast & affordable' },
       { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', description: 'High performance' },
       { id: 'o1-preview', name: 'o1 Preview', description: 'Advanced reasoning' },
     ],

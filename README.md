@@ -19,7 +19,7 @@ This is the future I'm building towards. VirtuOS serves as:
 
 ### My Vision
 
-Smart glasses with vision AI will transform how we interact with computers. Instead of being tied to screens, we'll simply describe what we want — and AI agents will execute. VirtuOS is my contribution to making that future a reality.
+Smart glasses with vision AI will transform how we interact with computers. Instead of being tied to screens, we'll simply describe what we want — and AI agents will execute. VirtuOS is my contribution to making that future a reality .I think by getting a internship at  **Google XR Glasses** team or **Meta Ray-Ban Smart Glasses** team will help me to contribute to that future.
 
 ---
 
@@ -34,85 +34,7 @@ Smart glasses with vision AI will transform how we interact with computers. Inst
 
 ---
 
-## 🛠️ Setup Guide
 
-### Backend Setup
-
-1. **Navigate to BACKEND folder:**
-   ```bash
-   cd BACKEND
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Configure API Keys (Optional):**
-   - API keys can be set in the app's **Settings** page
-   - Or create `.env` file:
-     ```
-     GEMINI_API_KEY=your-gemini-key
-     OPENAI_API_KEY=your-openai-key
-     ANTHROPIC_API_KEY=your-anthropic-key
-     XAI_API_KEY=your-xai-key
-     ```
-
-4. **Start the backend server:**
-   ```bash
-   npm start
-   ```
-   Or for development with auto-reload:
-   ```bash
-   npm run dev
-   ```
-
-Backend will run on: http://localhost:3000
-
----
-
-### Frontend Setup
-
-1. **Navigate to FRONTEND folder:**
-   ```bash
-   cd FRONTEND
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Start the development server:**
-   ```bash
-   npm run dev
-   ```
-
-Frontend will run on: http://localhost:5173
-
----
-
-### Full App (Recommended)
-
-From the root directory:
-```bash
-npm install
-npm run dev
-```
-
-This starts backend, frontend, and Electron app together.
-
----
-
-## 🏗️ Architecture
-
-- **Frontend:** React 19 + Vite + Tailwind CSS
-- **Backend:** Node.js + Express + Socket.IO
-- **VM Display:** noVNC + WebSocket Bridge
-- **AI Integration:** Multi-provider vision models
-- **VM Control:** VirtualBox + SSH + xdotool
-
----
 
 ## 🤝 Contributing & Future Improvements
 
