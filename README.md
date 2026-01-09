@@ -48,7 +48,6 @@ This project is **open for contributions**! If you're excited about AI agents, c
 | **Task Completion** | Simple tasks work well | Complex multi-step workflows need refinement |
 | **Speed** | 12s between AI calls (rate limiting) | Optimize for faster providers or local models |
 | **Error Recovery** | Basic retry logic | Smarter fallback strategies |
-| **Voice Input** | Not implemented | Add speech-to-text for true hands-free control |
 | **Local AI Models** | Cloud-only | Support for Ollama, LLaMA for offline use |
 
 ### Ideas for Extension
